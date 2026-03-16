@@ -1,4 +1,5 @@
 import os
+import math
 import uuid
 import shutil
 import zipfile
@@ -45,11 +46,98 @@ class Sen3CDSEDownloader(BaseDownloader):
         
         self.logger = logging.getLogger(self.__class__.__name__)
         
+        # Test authentication on init to fail fast if credentials are wrong
         self._get_token()
        
     @property
     def frequency(self) -> str:
         return "daily"
+    
+    def fetch(self, 
+              polygon: dict, 
+              time_frame: tuple[datetime.datetime, datetime.datetime],
+              output_dir: Path,
+              show_progress: bool = True,
+              max_workers: int = 4) -> list[ItemDownloadReport]:
+        
+        output_dir.mkdir(parents=True, exist_ok=True)
+        reports: list[ItemDownloadReport] = []
+        
+        # Calculate Bounding Box from Polygon [min_lon, min_lat, max_lon, max_lat]
+        aoi_shape = shape(polygon)
+        aoi_bbox = list(aoi_shape.bounds) 
+        aoi_wkt = aoi_shape.wkt
+        
+        self.logger.info("Authenticating with Copernicus...")
+        token = self._get_token()
+        
+        date_start = time_frame[0].strftime("%Y-%m-%dT%H:%M:%S.000Z")
+        date_end = time_frame[1].strftime("%Y-%m-%dT%H:%M:%S.000Z")
+        
+        search_url = "https://catalogue.dataspace.copernicus.eu/odata/v1/Products"
+        headers = {"Authorization": f"Bearer {token}"}
+        
+        filter_query = (
+            "Collection/Name eq 'SENTINEL-3' "
+            f"and contains(Name,'{self.product_type}') "
+            "and contains(Name,'_NT_') "
+            f"and ContentDate/Start ge {date_start} "
+            f"and ContentDate/End le {date_end} "
+            f"and OData.CSC.Intersects(area=geography'SRID=4326;{aoi_wkt}')"
+        )
+        
+        all_products = []
+        skip = 0
+        
+        self.logger.info(f"Querying OData API for {self.product_type} products...")
+        while True:
+            params = {"$filter": filter_query, "$top": 100, "$skip": skip}
+            response = requests.get(search_url, headers=headers, params=params)
+            response.raise_for_status()
+            
+            products = response.json().get("value", [])
+            if not products:
+                break
+            
+            all_products.extend(products)
+            skip += 100
+
+        self.logger.info(f"Found {len(all_products)} matching products.")
+        if not all_products:
+            return reports
+
+        # Build baseline reports
+        for product in all_products:
+            report = ItemDownloadReport(
+                data_source="CDSE OData API",
+                variable_name=self.product_type,
+                acquisition_time=datetime.datetime.fromisoformat(product["ContentDate"]["Start"].replace('Z', '+00:00')),
+                polygon=polygon,
+                bbox=aoi_bbox,
+                path=Path(""),
+                download_successful=False,
+                metadata=product
+            )
+            reports.append(report)
+
+        self.logger.info(f"Starting parallel pipeline with {max_workers} workers...")
+        
+        final_granular_reports: list[ItemDownloadReport] = []
+        
+        with ThreadPoolExecutor(max_workers=max_workers) as executor:
+            futures = [
+                executor.submit(self._download_worker, token, report, output_dir)
+                for report in reports
+            ]
+            
+            completed_iterator = as_completed(futures)
+            if show_progress:
+                completed_iterator = tqdm(completed_iterator, total=len(reports), desc="Downloading & Formatting Scenes")
+                
+            for future in completed_iterator:
+                # Extend flattens the list of reports returned by the worker
+                final_granular_reports.extend(future.result())
+        return final_granular_reports
 
     def _get_token(self) -> str:
         self.logger.debug("Requesting new CDSE access token...")
@@ -84,10 +172,22 @@ class Sen3CDSEDownloader(BaseDownloader):
         lats = coords_ds['latitude'].values
         swath_def = SwathDefinition(lons=lons, lats=lats)
         
+        # --- NEW DYNAMIC PIXEL SIZE LOGIC ---
+        # 1. Calculate center latitude of the bounding box
+        center_lat = (target_bbox[1] + target_bbox[3]) / 2.0
+        
+        # 2. Define physical pixel size in meters (Sentinel-3 is 300m)
+        pixel_size_m = 300.0
+        
+        # 3. Calculate dynamic degree resolution
+        res_y = pixel_size_m / 111320.0 
+        res_x = pixel_size_m / (111320.0 * math.cos(math.radians(center_lat)))
+        
+        # 4. Apply to map grid configuration
         area_id = 'duckdb_grid'
         proj_dict = {'proj': 'longlat', 'datum': 'WGS84'}
-        width = int((target_bbox[2] - target_bbox[0]) / 0.0027)
-        height = int((target_bbox[3] - target_bbox[1]) / 0.0027)
+        width = int((target_bbox[2] - target_bbox[0]) / res_x)
+        height = int((target_bbox[3] - target_bbox[1]) / res_y)
         area_def = AreaDefinition(area_id, 'WGS84', area_id, proj_dict, width, height, target_bbox)
         
         # 2. Target files
@@ -195,90 +295,3 @@ class Sen3CDSEDownloader(BaseDownloader):
             self.logger.error(error_msg)
             base_report.error = error_msg
             return [base_report]
-
-    def fetch(self, 
-              polygon: dict, 
-              time_frame: tuple[datetime.datetime, datetime.datetime],
-              output_dir: Path,
-              show_progress: bool = True,
-              max_workers: int = 4, 
-              **kwargs) -> list[ItemDownloadReport]:
-        
-        output_dir.mkdir(parents=True, exist_ok=True)
-        reports: list[ItemDownloadReport] = []
-        
-        # Calculate Bounding Box from Polygon [min_lon, min_lat, max_lon, max_lat]
-        aoi_shape = shape(polygon)
-        aoi_bbox = list(aoi_shape.bounds) 
-        aoi_wkt = aoi_shape.wkt
-        
-        self.logger.info("Authenticating with Copernicus...")
-        token = self._get_token()
-        
-        date_start = time_frame[0].strftime("%Y-%m-%dT%H:%M:%S.000Z")
-        date_end = time_frame[1].strftime("%Y-%m-%dT%H:%M:%S.000Z")
-        
-        search_url = "https://catalogue.dataspace.copernicus.eu/odata/v1/Products"
-        headers = {"Authorization": f"Bearer {token}"}
-        
-        filter_query = (
-            "Collection/Name eq 'SENTINEL-3' "
-            f"and contains(Name,'{self.product_type}') "
-            "and contains(Name,'_NT_') "
-            f"and ContentDate/Start ge {date_start} "
-            f"and ContentDate/End le {date_end} "
-            f"and OData.CSC.Intersects(area=geography'SRID=4326;{aoi_wkt}')"
-        )
-        
-        all_products = []
-        skip = 0
-        
-        self.logger.info(f"Querying OData API for {self.product_type} products...")
-        while True:
-            params = {"$filter": filter_query, "$top": 100, "$skip": skip}
-            response = requests.get(search_url, headers=headers, params=params)
-            response.raise_for_status()
-            
-            products = response.json().get("value", [])
-            if not products:
-                break
-            
-            all_products.extend(products)
-            skip += 100
-
-        self.logger.info(f"Found {len(all_products)} matching products.")
-        if not all_products:
-            return reports
-
-        # Build baseline reports
-        for product in all_products:
-            report = ItemDownloadReport(
-                data_source="CDSE OData API",
-                variable_name=self.product_type,
-                acquisition_time=datetime.datetime.fromisoformat(product["ContentDate"]["Start"].replace('Z', '+00:00')),
-                polygon=polygon,
-                bbox=aoi_bbox,
-                path=Path(""),
-                download_successful=False,
-                metadata=product
-            )
-            reports.append(report)
-
-        self.logger.info(f"Starting parallel pipeline with {max_workers} workers...")
-        
-        final_granular_reports: list[ItemDownloadReport] = []
-        
-        with ThreadPoolExecutor(max_workers=max_workers) as executor:
-            futures = [
-                executor.submit(self._download_worker, token, report, output_dir)
-                for report in reports
-            ]
-            
-            completed_iterator = as_completed(futures)
-            if show_progress:
-                completed_iterator = tqdm(completed_iterator, total=len(reports), desc="Downloading & Formatting Scenes")
-                
-            for future in completed_iterator:
-                # Extend flattens the list of reports returned by the worker
-                final_granular_reports.extend(future.result())
-        return final_granular_reports
