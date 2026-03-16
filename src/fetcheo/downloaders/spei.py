@@ -15,7 +15,7 @@ import requests
 from http.client import IncompleteRead
 from requests.exceptions import ChunkedEncodingError, ConnectionError
 
-from drought_causality.downloaders.downloader import BaseDownloader, ItemDownloadReport
+from fetcheo.downloaders._downloader import BaseDownloader, ItemDownloadReport
 
 
 class SPEIDownloader(BaseDownloader):
@@ -32,7 +32,7 @@ class SPEIDownloader(BaseDownloader):
     def frequency(self) -> str:
         return "monthly"
 
-    def download(self, 
+    def fetch(self, 
                 polygon: dict, 
                 time_frame: tuple[datetime.datetime, datetime.datetime], 
                 output_dir: Path,

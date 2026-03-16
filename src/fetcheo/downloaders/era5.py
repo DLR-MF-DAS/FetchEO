@@ -14,7 +14,7 @@ import xarray as xr
 from rasterio.crs import CRS
 from shapely.geometry import shape
 
-from drought_causality.downloaders.downloader import BaseDownloader, ItemDownloadReport
+from fetcheo.downloaders._downloader import BaseDownloader, ItemDownloadReport
 
 
 class ERA5Downloader(BaseDownloader):
@@ -48,7 +48,7 @@ class ERA5Downloader(BaseDownloader):
     def frequency(self) -> str:
         return "monthly"
 
-    def download(
+    def fetch(
         self,
         polygon: dict,
         time_frame: tuple[datetime.datetime, datetime.datetime],

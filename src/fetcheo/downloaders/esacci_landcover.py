@@ -18,7 +18,7 @@ import xarray as xr
 from rasterio.mask import mask
 from rasterio.crs import CRS
 
-from drought_causality.downloaders.downloader import BaseDownloader, ItemDownloadReport
+from fetcheo.downloaders._downloader import BaseDownloader, ItemDownloadReport
 
 
 class ESACCILandCoverDownloader(BaseDownloader):
@@ -43,7 +43,7 @@ class ESACCILandCoverDownloader(BaseDownloader):
     def frequency(self) -> str:
         return "yearly"
 
-    def download(self, 
+    def fetch(self, 
                 polygon: dict, 
                 time_frame: tuple[datetime.datetime, datetime.datetime], 
                 output_dir: Path,
