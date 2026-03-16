@@ -47,7 +47,11 @@ class Sen3CDSEDownloader(BaseDownloader):
         self.logger = logging.getLogger(self.__class__.__name__)
         
         # Test authentication on init to fail fast if credentials are wrong
-        self._get_token()
+        try:
+            self._get_token()
+        except Exception as e:
+            self.logger.error(f"Authentication failed: {e}")
+            raise 
        
     @property
     def frequency(self) -> str:
@@ -122,8 +126,8 @@ class Sen3CDSEDownloader(BaseDownloader):
 
         self.logger.info(f"Starting parallel pipeline with {max_workers} workers...")
         
-        final_granular_reports: list[ItemDownloadReport] = []
-        
+        # Download images (multiple in parallel)
+        final_reports: list[ItemDownloadReport] = []
         with ThreadPoolExecutor(max_workers=max_workers) as executor:
             futures = [
                 executor.submit(self._download_worker, token, report, output_dir)
@@ -132,12 +136,12 @@ class Sen3CDSEDownloader(BaseDownloader):
             
             completed_iterator = as_completed(futures)
             if show_progress:
-                completed_iterator = tqdm(completed_iterator, total=len(reports), desc="Downloading & Formatting Scenes")
+                completed_iterator = tqdm(completed_iterator, total=len(reports), desc="Sentinel-3 CDSE", unit="image")
                 
             for future in completed_iterator:
                 # Extend flattens the list of reports returned by the worker
-                final_granular_reports.extend(future.result())
-        return final_granular_reports
+                final_reports.extend(future.result())
+        return final_reports
 
     def _get_token(self) -> str:
         self.logger.debug("Requesting new CDSE access token...")
