@@ -1,10 +1,10 @@
 [project]
-name = "project-name"
+name = "fetcheo"
 version = "0.0.1"
 authors = [
-  { name="FirstName LastName", email="firstname.lastname@dlr.de" },
+  { name="Samuel Garske", email="samuel.garske@dlr.de" },
 ]
-description = "Project description"
+description = "A collection of downloaders for different Earth observation data sources."
 readme = "README.md"
 requires-python = ">=3.12"
 classifiers = [
