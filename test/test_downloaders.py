@@ -84,6 +84,8 @@ def test_spei_downloader_full(tmp_path):
             data_source="test_source",
             variable_name="test_variable",
             acquisition_time=datetime.datetime(2020, 1, 1),
+            polygon=TEST_POLYGON,
+            bbox=(-124.0, 32.0, -114.0, 42.0),
             path=tmp_path / "SPEI_202001.tif",
             download_successful=True,
             error=None,
@@ -91,7 +93,7 @@ def test_spei_downloader_full(tmp_path):
         )
     ]
 
-    with patch("drought_causality.downloaders.spei.SPEIDownloader.fetch") as mock_fetch:
+    with patch("fetcheo.downloaders.spei.SPEIDownloader.fetch") as mock_fetch:
         mock_fetch.return_value = dummy_report
         downloader = SPEIDownloader(cache_dir=tmp_path)
         report = downloader.fetch(
@@ -135,6 +137,8 @@ def test_modis_ndvi_downloader_full(tmp_path):
             data_source="test_source",
             variable_name="test_variable",
             acquisition_time=datetime.datetime(2020, 1, 1),
+            polygon=TEST_POLYGON,
+            bbox=(-124.0, 32.0, -114.0, 42.0),
             path=tmp_path / "MODIS_NDVI_202001.tif",
             download_successful=True,
             error=None,
@@ -142,7 +146,7 @@ def test_modis_ndvi_downloader_full(tmp_path):
         )
     ]
 
-    with patch("drought_causality.downloaders.modis_ndvi.MODISNDVIDownloader.fetch") as mock_fetch:
+    with patch("fetcheo.downloaders.modis_ndvi.MODISNDVIDownloader.fetch") as mock_fetch:
         mock_fetch.return_value = dummy_report
         downloader = MODISNDVIDownloader(cache_dir=tmp_path)
         report = downloader.fetch(
@@ -177,7 +181,7 @@ def test_modis_ndvi_downloader_full(tmp_path):
     assert len(validate_paths) == len(save_paths)
 
 
-@patch("drought_causality.downloaders.era5.cdsapi.Client")
+@patch("fetcheo.downloaders.era5.cdsapi.Client")
 def test_era5_downloader_full(mock_client, tmp_path):
     """Custom test for ERA5Downloader: fetch (mocked), _save_geotiff, _validate_geotiff."""
     # Set up the mock to simulate .retrieve() behavior
@@ -190,6 +194,8 @@ def test_era5_downloader_full(mock_client, tmp_path):
             data_source="test_source",
             variable_name="test_variable",
             acquisition_time=datetime.datetime(2020, 1, 1),
+            polygon=TEST_POLYGON,
+            bbox=(-124.0, 32.0, -114.0, 42.0),
             path=tmp_path / "ERA5_202001.tif",
             download_successful=True,
             error=None,
@@ -197,7 +203,7 @@ def test_era5_downloader_full(mock_client, tmp_path):
         )
     ]
 
-    with patch("drought_causality.downloaders.era5.ERA5Downloader.fetch") as mock_fetch:
+    with patch("fetcheo.downloaders.era5.ERA5Downloader.fetch") as mock_fetch:
         mock_fetch.return_value = dummy_report
         downloader = ERA5Downloader(cache_dir=tmp_path)
         report = downloader.fetch(
@@ -241,6 +247,8 @@ def test_esacci_downloader_full(tmp_path):
             data_source="test_source",
             variable_name="test_variable",
             acquisition_time=datetime.datetime(2020, 1, 1),
+            polygon=TEST_POLYGON,
+            bbox=(-124.0, 32.0, -114.0, 42.0),
             path=tmp_path / "ESACCI_Landcover_202001.tif",
             download_successful=True,
             error=None,
@@ -248,7 +256,7 @@ def test_esacci_downloader_full(tmp_path):
         )
     ]
 
-    with patch("drought_causality.downloaders.esacci_landcover.ESACCILandCoverDownloader.fetch") as mock_fetch:
+    with patch("fetcheo.downloaders.esacci_landcover.ESACCILandCoverDownloader.fetch") as mock_fetch:
         mock_fetch.return_value = dummy_report
         downloader = ESACCILandCoverDownloader(cache_dir=tmp_path)
         report = downloader.fetch(
@@ -292,6 +300,8 @@ def test_ecira_downloader_full(tmp_path):
             data_source="test_source",
             variable_name="test_variable",
             acquisition_time=datetime.datetime(2020, 1, 1),
+            polygon=TEST_POLYGON,
+            bbox=(-124.0, 32.0, -114.0, 42.0),
             path=tmp_path / "ECIRA_202001.tif",
             download_successful=True,
             error=None,
@@ -299,7 +309,7 @@ def test_ecira_downloader_full(tmp_path):
         )
     ]
 
-    with patch("drought_causality.downloaders.ecira.ECIRADownloader.fetch") as mock_fetch:
+    with patch("fetcheo.downloaders.ecira.ECIRADownloader.fetch") as mock_fetch:
         mock_fetch.return_value = dummy_report
         downloader = ECIRADownloader(cache_dir=tmp_path)
         report = downloader.fetch(
@@ -343,6 +353,8 @@ def test_sen3_cdse_downloader_full(tmp_path):
             data_source="test_source",
             variable_name="test_variable",
             acquisition_time=datetime.datetime(2020, 1, 1),
+            polygon=TEST_POLYGON,
+            bbox=(-124.0, 32.0, -114.0, 42.0),
             path=tmp_path / "Sen3CDSE_20200101.tif",
             download_successful=True,
             error=None,
@@ -350,7 +362,7 @@ def test_sen3_cdse_downloader_full(tmp_path):
         )
     ]
 
-    with patch("drought_causality.downloaders.sen3_cdse.Sen3CDSEDownloader.fetch") as mock_fetch:
+    with patch("fetcheo.downloaders.sen3_cdse.Sen3CDSEDownloader.fetch") as mock_fetch:
         mock_fetch.return_value = dummy_report
         downloader = Sen3CDSEDownloader(cache_dir=tmp_path)
         report = downloader.fetch(
