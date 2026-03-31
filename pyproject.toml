@@ -16,6 +16,24 @@ dependencies = [
     "pytest",
     "click",
     "pdoc",
+    "requests",
+    "geopandas",
+    "numpy",
+    "xarray",
+    "rioxarray",
+    "h5netcdf",
+    "h5py",
+    "netcdf4",
+    "cdsapi",
+    "pydot",
+    "pygraphviz",
+    "cdsapi",
+    "networkx",
+    "duckdb",
+    "networkx",
+    "pystac-client",
+    "satpy",
+    "openeo"
 ]
 
 [project.urls]
