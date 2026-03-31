@@ -8,12 +8,11 @@ from tqdm import tqdm
 from pathlib import Path
 
 import openeo
-from openeo.processes import ProcessBuilder
 
 from fetcheo.downloaders._downloader import BaseDownloader, ItemDownloadReport
 
 
-class Sen3OpenEODownloader(BaseDownloader):
+class Sen3WaterOpenEODownloader(BaseDownloader):
     def __init__(self):
         super().__init__()
         self.connection = openeo.connect("https://openeo.dataspace.copernicus.eu")
@@ -21,7 +20,7 @@ class Sen3OpenEODownloader(BaseDownloader):
 
     @property
     def frequency(self) -> str:
-        return "1-day"
+        return "daily"
 
     def fetch(self, 
               polygon: dict, 
@@ -144,7 +143,7 @@ class Sen3OpenEODownloader(BaseDownloader):
                 error_msg = "File missing from download stream"
             
             report = ItemDownloadReport(
-                data_source="Sentinel3-openeo",
+                data_source="Sentinel3Water-openeo",
                 variable_name=", ".join(bands),
                 acquisition_time=exact_dt,
                 polygon=polygon,
@@ -165,8 +164,8 @@ class Sen3OpenEODownloader(BaseDownloader):
         return [
             "B01", "B02", "B03", "B04", "B05", "B06", "B07", "B08", "B09", 
             "B10", "B11", "B12", "B13", "B14", "B15", "B16", "B17", "B18",
-            "B19", "B20", "B21", "FLAGS", "IWV", "CHL_OC4ME", "TSM_NN", "PAR",
-            "KD490_M07", "A865", "T865", "CHL_NN", "ADG443_NN"
+            "B19", "B20", "B21", "FLAGS", "IWV", "CHL_OC4ME", "TSM_NN", 
+            "PAR", "KD490_M07", "A865", "T865", "CHL_NN", "ADG443_NN"
         ]
 
     def _extract_bbox(self, polygon: dict) -> list[float]:
