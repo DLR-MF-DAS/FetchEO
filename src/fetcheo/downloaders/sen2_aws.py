@@ -344,6 +344,3 @@ class Sen2AWSDownloader(BaseDownloader):
                 error=str(e),
                 metadata=metadata
             )
-        
-    def _save_geotiff(self, data, output_dir: Path, basename: str) -> dict[str, Path]:
-        return {"s2": output_dir / f"{basename}.tif"}
