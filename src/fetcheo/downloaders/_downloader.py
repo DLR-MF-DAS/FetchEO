@@ -51,11 +51,6 @@ class BaseDownloader(ABC):
         """Returns the frequency of the data (e.g. 'daily', 'monthly', 'hourly')."""
         pass
 
-    @abstractmethod
-    def _save_geotiff(self, data, output_dir: Path, basename: str) -> dict[str, Path]:
-        """Saves the result and returns a dictionary of variable names and their created file paths."""
-        pass
-
     def _get_filepaths(self, output_dir: Path, basename: str) -> List[Path]:
         """Returns expected file paths for the given output directory and basename."""
         geotiff_path = output_dir / f"{basename}.tif"
