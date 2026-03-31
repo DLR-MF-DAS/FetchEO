@@ -25,16 +25,17 @@ class Sen2OpenEODownloader(BaseDownloader):
 
     def get_all_bands(self) -> List[str]:
         """Returns a list of all available Sentinel-2 bands in the openEO collection."""
-        return ["B01", "B02", "B03", "B04", "B05", "B06", "B07", "B08", "B8A", "B09", "B11", "B12"]
+        return ["B01", "B02", "B03", "B04", 
+                "B05", "B06", "B07", "B08", 
+                "B8A", "B09", "B11", "B12"]
 
     def fetch(self, 
               polygon: dict, 
-              time_frame: tuple[datetime.datetime, datetime.datetime],
-              output_dir: Path,
-              show_progress: bool = True,
-              bands: list = None,
-              max_cloud_cover: float = 30.0,
-              **kwargs) -> list[ItemDownloadReport]:
+              time_frame: tuple[datetime.datetime, datetime.datetime], 
+              output_dir: Path, 
+              show_progress: bool = True, 
+              bands: list = None, 
+              max_cloud_cover: float = 30.0) -> list[ItemDownloadReport]:
         # Create list to hold download reports       
         reports = []
 
@@ -151,7 +152,7 @@ class Sen2OpenEODownloader(BaseDownloader):
     
     @property
     def frequency(self) -> str:
-        return "5-day"
+        return "daily"
 
     def _extract_bbox(self, polygon: dict) -> list[float]:
         """Helper method to extract [xmin, ymin, xmax, ymax] from a GeoJSON polygon."""
