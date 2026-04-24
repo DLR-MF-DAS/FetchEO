@@ -13,7 +13,7 @@ from fetcheo.duckdb_helpers import (connect_to_db,
 # Import the base downloader and report
 DOWNLOADER_DICT = {
     'era5': 'fetcheo.downloaders.era5.ERA5Downloader',
-    'modis_ndvi': 'fetcheo.downloaders.modis.MODISDownloader',
+    'modis_ndvi': 'fetcheo.downloaders.modis_ndvi.MODISNDVIDownloader',
     'sen3_openeo': 'fetcheo.downloaders.sen3_openeo.Sen3WaterOpenEODownloader',
     # Add more as needed
 }
@@ -46,7 +46,7 @@ class FetchEOLoader:
         """
         #
         output_dir = Path(output_dir)
-        
+
         # Connect to DB and ensure tables are initialised
         db_connection = connect_to_db(str(self.db_path))
         initialise_tables(db_connection)
@@ -90,24 +90,3 @@ class FetchEOLoader:
         # Close DB connection and return all reports
         db_connection.close()
         return all_reports
-
-# Example usage:
-if __name__ == "__main__":
-    # User specifies which downloaders to use
-    config = {
-        'era5': True,
-        'ecira': False,
-        'sen3_openeo': True,
-        # ...
-    }
-    # Optionally, pass custom kwargs for each downloader
-    kwargs = {
-        'era5': {'variables_dict': {'t2m': '2m_temperature'}},
-        # ...
-    }
-    loader = FetchEOLoader(config, kwargs)
-    # Example polygon and time frame
-    polygon = {"type": "Polygon", "coordinates": [[[0,0],[1,0],[1,1],[0,1],[0,0]]]}  # Replace with real geojson
-    time_frame = (datetime.datetime(2020,1,1), datetime.datetime(2020,1,31))
-    output_dir = Path('output')
-    reports = loader.fetch(polygon, time_frame, location_nickname="example_location")
