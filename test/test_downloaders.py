@@ -113,49 +113,81 @@ def test_downloader_generalized(tmp_path, modname, class_name, expected_freq, mo
     init_path = f"{modname}.{class_name}.__init__"
     if mock_fetch:
         with patch(init_path, return_value=None), patch(fetch_path, return_value=dummy_report):
-            _run_downloader_test(Downloader, tmp_path, time_frame, expected_freq, dummy_report)
+            _run_downloader_test(Downloader, 
+                                 tmp_path, 
+                                 time_frame, 
+                                 expected_freq, 
+                                 dummy_report)
     else:
         _run_downloader_test(Downloader, tmp_path, time_frame, expected_freq, None)
 
 def _run_downloader_test(Downloader, tmp_path, time_frame, expected_freq, dummy_report):
+    import shutil
     # Instantiate
     downloader = Downloader(cache_dir=tmp_path) if 'cache_dir' in inspect.signature(Downloader).parameters else Downloader()
-    # Patch required attributes for ERA5Downloader and similar classes
-    if Downloader.__name__ == "ERA5Downloader":
-        downloader.engine = "netcdf4"
-        downloader.variables_dict = {"t2m": "2m_temperature", "ssrd": "surface_solar_radiation_downwards", "tp": "total_precipitation", "swvl1": "volumetric_soil_water_layer_1"}
-        downloader.product_type = "monthly_averaged_reanalysis"
-        downloader.dataset = "reanalysis-era5-land-monthly-means"
-        downloader.time_key = "time"
-        downloader.cache_dir = tmp_path
-        def _dummy_era5_ds():
-            """Dummy ERA5-like Dataset with t2m and ssrd variables."""
-            da = _dummy_da()
-            return xr.Dataset({"t2m": da, "ssrd": da, "tp": da, "swvl1": da})
-    # ...add similar blocks for other downloaders if needed...
-    # Run fetch
-    report = downloader.fetch(
-        polygon=TEST_POLYGON,
-        time_frame=time_frame,
-        output_dir=tmp_path,
-    )
-    assert isinstance(report, list)
-    assert all(isinstance(item, ItemDownloadReport) for item in report)
-    assert all(item.download_successful for item in report)
+    try:
+        # Run fetch
+        report = downloader.fetch(
+            polygon=TEST_POLYGON,
+            time_frame=time_frame,
+            output_dir=tmp_path,
+        )
+        assert isinstance(report, list)
+        assert all(isinstance(item, ItemDownloadReport) for item in report)
+        assert all(item.download_successful for item in report)
 
-    # Frequency property
-    assert hasattr(downloader, "frequency")
-    assert downloader.frequency == expected_freq
+        # Frequency property
+        assert hasattr(downloader, "frequency")
+        assert downloader.frequency == expected_freq
 
-    # Test _save_geotiff/_validate_geotiff if present
-    if hasattr(downloader, "_save_geotiff") and hasattr(downloader, "_validate_geotiff"):
-        if Downloader.__name__ == "ERA5Downloader":
-            da = _dummy_era5_ds()
-        else:
-            da = _dummy_da()
-        save_paths = downloader._save_geotiff(data=da, output_dir=tmp_path, basename=f"{Downloader.__name__}_test")
-        for path in save_paths.values():
-            assert Path(path).exists()
-        validate_paths = downloader._validate_geotiff(output_dir=tmp_path, basename=f"{Downloader.__name__}_test")
+    finally:
+        # Clean up the tmp_path directory after test
+        shutil.rmtree(tmp_path, ignore_errors=True)
+
+
+def test_era5_downloader_save_and_validate(tmp_path):
+    # Import ERA5Downloader directly to access save and validate methods
+    from fetcheo.downloaders.era5 import ERA5Downloader
+    downloader = ERA5Downloader(cache_dir=tmp_path)
+
+    # Create dummy ERA5-like Dataset
+    def _dummy_era5_ds():
+        """Dummy ERA5-like Dataset with t2m and ssrd variables."""
+        da = _dummy_da()
+        return xr.Dataset({"t2m": da, "ssrd": da, "tp": da, "swvl1": da})
+    ds = _dummy_era5_ds()
+
+    # Test save and validate
+    basename = "ERA5Downloader_test"
+
+    # Save GeoTIFF
+    save_paths = downloader._save_geotiff(data=ds, output_dir=tmp_path, basename=basename)
+    for path in save_paths.values():
+        assert Path(path).exists()
+
+    # Validate GeoTIFF
+    if hasattr(downloader, "_validate_geotiff"):
+        validate_paths = downloader._validate_geotiff(output_dir=tmp_path, basename=basename)
+        assert all(validate_paths.values())
+        assert len(validate_paths) == len(save_paths)
+
+# Dedicated test for MODISNDVIDownloader
+def test_modis_ndvi_downloader_save_and_validate(tmp_path):
+    # Import MODISNDVIDownloader directly to access save and validate methods
+    from fetcheo.downloaders.modis_ndvi import MODISNDVIDownloader
+    downloader = MODISNDVIDownloader(cache_dir=tmp_path)
+
+    # Create dummy MODIS NDVI-like DataArray
+    da = _dummy_da()
+    basename = "MODISNDVIDownloader_test"
+
+    # Save GeoTIFF
+    save_paths = downloader._save_geotiff(data=da, output_dir=tmp_path, basename=basename)
+    for path in save_paths.values():
+        assert Path(path).exists()
+        
+    # Validate GeoTIFF if method exists
+    if hasattr(downloader, "_validate_geotiff"):
+        validate_paths = downloader._validate_geotiff(output_dir=tmp_path, basename=basename)
         assert all(validate_paths.values())
         assert len(validate_paths) == len(save_paths)
