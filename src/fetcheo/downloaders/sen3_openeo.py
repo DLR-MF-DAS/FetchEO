@@ -13,10 +13,13 @@ from fetcheo.downloaders._downloader import BaseDownloader, ItemDownloadReport
 
 
 class Sen3WaterOpenEODownloader(BaseDownloader):
-    def __init__(self):
+    def __init__(self, 
+                 bands: list = None):
         super().__init__()
         self.connection = openeo.connect("https://openeo.dataspace.copernicus.eu")
         self.connection.authenticate_oidc()
+
+        self.bands = bands
 
     @property
     def frequency(self) -> str:
@@ -26,8 +29,7 @@ class Sen3WaterOpenEODownloader(BaseDownloader):
               polygon: dict, 
               time_frame: tuple[datetime.datetime, datetime.datetime],
               output_dir: Path,
-              show_progress: bool = True,
-              bands: list = ["B08", "B04", "B03"]) -> list[ItemDownloadReport]:
+              show_progress: bool = True) -> list[ItemDownloadReport]:
         
         reports = []
         output_dir = Path(output_dir)
@@ -51,13 +53,13 @@ class Sen3WaterOpenEODownloader(BaseDownloader):
             print(f"Submitting Sentinel-3 processing job for {start_str} to {end_str}...")
 
         # 2. Load datacube using WGS84 (Finds the actual data!)
-        if bands is None:
-            bands = self._get_all_bands()
+        if self.bands is None:
+            self.bands = self._get_all_bands()
         datacube = self.connection.load_collection(
             "SENTINEL3_OLCI_L2_WATER", 
             spatial_extent=search_extent,
             temporal_extent=[start_str, end_str],
-            bands=bands,
+            bands=self.bands,
         )
 
         # # 3. Resample and force the exact metric crop
@@ -144,7 +146,7 @@ class Sen3WaterOpenEODownloader(BaseDownloader):
             
             report = ItemDownloadReport(
                 data_source="Sentinel3Water-openeo",
-                variable_name=", ".join(bands),
+                variable_name=", ".join(self.bands),
                 acquisition_time=exact_dt,
                 polygon=polygon,
                 bbox=self._extract_bbox(polygon), 
@@ -167,12 +169,6 @@ class Sen3WaterOpenEODownloader(BaseDownloader):
             "B19", "B20", "B21", "FLAGS", "IWV", "CHL_OC4ME", "TSM_NN", 
             "PAR", "KD490_M07", "A865", "T865", "CHL_NN", "ADG443_NN"
         ]
-
-    def _extract_bbox(self, polygon: dict) -> list[float]:
-        """Extracts [xmin, ymin, xmax, ymax] from a GeoJSON polygon."""
-        lons = [pt[0] for pt in polygon["coordinates"][0]]
-        lats = [pt[1] for pt in polygon["coordinates"][0]]
-        return [min(lons), min(lats), max(lons), max(lats)]
 
     def _calculate_utm_epsg(self, bbox: list[float]) -> int:
         """Dynamically calculates the local UTM EPSG code based on the bounding box centroid."""
