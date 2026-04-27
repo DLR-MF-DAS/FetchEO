@@ -1,16 +1,20 @@
-import datetime
 import importlib
+import logging
 from pathlib import Path
 from typing import Dict, List, Tuple, Any
 
+from fetcheo.duckdb_helpers import (
+    connect_to_db,
+    initialise_tables,
+    fetch_or_create_location_id,
+    upsert_file
+)
 
-from fetcheo.duckdb_helpers import (connect_to_db, 
-                                    initialise_tables, 
-                                    fetch_or_create_location_id, 
-                                    upsert_file)
+
+# Set up module-level logger
+logger = logging.getLogger(__name__)
 
 
-# Import the base downloader and report
 DOWNLOADER_DICT = {
     'era5': 'fetcheo.downloaders.era5.ERA5Downloader',
     'modis_ndvi': 'fetcheo.downloaders.modis_ndvi.MODISNDVIDownloader',
@@ -56,13 +60,16 @@ class FetchEOLoader:
 
         # Loop through downloaders and fetch data, adding to DB after each downloader
         all_reports = []
+
         for name, downloader in self.downloaders.items():
             # Fetch data for this downloader
-            print(f"Running downloader: {name}")
-            reports = downloader.fetch(polygon, 
-                                       time_frame, 
-                                       output_dir, 
-                                       show_progress=show_progress)
+            logger.info(f"Running downloader: {name}")
+            reports = downloader.fetch(
+                polygon,
+                time_frame,
+                output_dir,
+                show_progress=show_progress
+            )
             all_reports.extend(reports)
 
             # Add each report to DB after each downloader
