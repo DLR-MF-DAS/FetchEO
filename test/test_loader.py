@@ -2,6 +2,7 @@ import datetime
 import pytest
 from pathlib import Path
 from unittest.mock import patch, MagicMock
+from contextlib import ExitStack
 
 from fetcheo.loader import FetchEOLoader
 
@@ -53,24 +54,42 @@ def test_loader_fetch_calls_downloaders(mock_upsert, mock_locid, mock_init_table
     dummy_report.path.parent.mkdir(parents=True, exist_ok=True)
     dummy_report.path.write_bytes(b"test")
 
-    config = {'era5': True}
-    kwargs = {'era5': {'variables_dict': {'t2m': '2m_temperature'}}}
-    loader = FetchEOLoader(config, kwargs)
-    # Patch the fetch method
-    for d in loader.downloaders.values():
-        d.fetch = MagicMock(return_value=[dummy_report])
+    # Dynamically patch all downloader __init__ methods
+    import pkgutil, importlib, inspect
+    patches = []
+    downloaders_path = Path(__file__).parent.parent / 'src' / 'fetcheo' / 'downloaders'
+    for _, modname, ispkg in pkgutil.iter_modules([str(downloaders_path)]):
+        if ispkg:
+            continue
+        full_modname = f'fetcheo.downloaders.{modname}'
+        try:
+            mod = importlib.import_module(full_modname)
+        except Exception:
+            continue
+        for name, obj in inspect.getmembers(mod, inspect.isclass):
+            if name.endswith('Downloader'):
+                patches.append(patch(f'{full_modname}.{name}.__init__', return_value=None))
+    with ExitStack() as stack:
+        for p in patches:
+            stack.enter_context(p)
+        config = {'era5': True}
+        kwargs = {'era5': {'variables_dict': {'t2m': '2m_temperature'}}}
+        loader = FetchEOLoader(config, kwargs)
+        # Patch the fetch method
+        for d in loader.downloaders.values():
+            d.fetch = MagicMock(return_value=[dummy_report])
 
-    polygon = TEST_POLYGON
-    time_frame = (datetime.datetime(2020, 1, 1), datetime.datetime(2020, 1, 31))
-    reports = loader.fetch(polygon, time_frame, location_nickname="testloc", output_dir=tmp_path)
-    assert isinstance(reports, list)
-    assert reports[0].acquisition_time == datetime.datetime(2020, 1, 1)
-    for d in loader.downloaders.values():
-        d.fetch.assert_called_once()
-    mock_connect_db.assert_called_once()
-    mock_init_tables.assert_called_once()
-    mock_locid.assert_called_once()
-    mock_upsert.assert_called()
+        polygon = TEST_POLYGON
+        time_frame = (datetime.datetime(2020, 1, 1), datetime.datetime(2020, 1, 31))
+        reports = loader.fetch(polygon, time_frame, location_nickname="testloc", output_dir=tmp_path)
+        assert isinstance(reports, list)
+        assert reports[0].acquisition_time == datetime.datetime(2020, 1, 1)
+        for d in loader.downloaders.values():
+            d.fetch.assert_called_once()
+        mock_connect_db.assert_called_once()
+        mock_init_tables.assert_called_once()
+        mock_locid.assert_called_once()
+        mock_upsert.assert_called()
 
 def test_loader_handles_empty_config():
     loader = FetchEOLoader({}, {})
