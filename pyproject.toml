@@ -38,5 +38,9 @@ dependencies = [
 ]
 
 [project.urls]
-Homepage = "https://github.com/DLR-MF-DAS/project-name"
-Issues = "https://github.com/DLR-MF-DAS/project-name/issues"
+Homepage = "https://github.com/DLR-MF-DAS/FetchEO"
+Issues = "https://github.com/DLR-MF-DAS/FetchEO/issues"
+
+[build-system]
+requires = ["uv_build >= 0.11.7, <0.12.0"]
+build-backend = "uv_build"
