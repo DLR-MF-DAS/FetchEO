@@ -15,12 +15,12 @@ AVAILABLE_DOWNLOADERS = list(DOWNLOADER_DICT.keys())
 
 
 def validate_downloaders(downloaders):
-	if not downloaders:
-		return AVAILABLE_DOWNLOADERS
-	invalid = [d for d in downloaders if d not in AVAILABLE_DOWNLOADERS]
-	if invalid:
-		raise click.ClickException(f"Unrecognised downloaders: {invalid}. Should be from {AVAILABLE_DOWNLOADERS}.")
-	return list(downloaders)
+    if not downloaders:
+        return AVAILABLE_DOWNLOADERS
+    invalid = [d for d in downloaders if d not in AVAILABLE_DOWNLOADERS]
+    if invalid:
+        raise click.ClickException(f"Unrecognised downloaders: {invalid}. Should be from {AVAILABLE_DOWNLOADERS}.")
+    return list(downloaders)
 
 
 def parse_and_validate_inputs(
@@ -37,7 +37,8 @@ def parse_and_validate_inputs(
     # Convert start_date and end_date to datetime for comparison and downstream use
     start_date_dt = datetime.strptime(start_date, "%Y-%m-%d")
     end_date_dt = datetime.strptime(end_date, "%Y-%m-%d")
-    assert start_date_dt <= end_date_dt
+    if start_date_dt > end_date_dt:
+        raise click.BadParameter("start_date must be on or before end_date.")
 
     downloaders = validate_downloaders(downloaders)
 	#logging.info(f"Downloaders to be used: {downloaders}")
@@ -61,18 +62,18 @@ def parse_and_validate_inputs(
 
 @click.command()
 @click.option('--downloader', '-d', multiple=True, help=f"Downloader(s) to use. Available: {AVAILABLE_DOWNLOADERS}")
-@click.option('--polygon', required=True, help='Polygon as GeoJSON string or path to GeoJSON file')
+@click.option('--geojson_path', required=True, help='Path to GeoJSON file')
 @click.option('--start-date', type=str, required=True, help='Start date (YYYY-MM-DD)')
 @click.option('--end-date', type=str, required=True, help='End date (YYYY-MM-DD)')
 @click.option('--location-nickname', type=str, default=None, help='Location nickname (default: polygon file name or "location")')
 @click.option('--output-dir', type=str, default='data', show_default=True, help='Output directory')
 @click.option('--show-progress/--no-show-progress', default=True, show_default=True, help='Show progress bar')
 @click.option('--db-path', type=str, default='fetcheo_data.duckdb', show_default=True, help='Path to DuckDB database file')
-def main(downloader, polygon, start_date, end_date, location_nickname, output_dir, show_progress, db_path):
+def main(downloader, geojson_path, start_date, end_date, location_nickname, output_dir, show_progress, db_path):
     """Run FetchEOLoader from the command line."""
     #
     start_dt, end_dt, downloaders, geojson_dict, polygon, location_nickname, cache_dir = parse_and_validate_inputs(
-        geojson_path=polygon,
+        geojson_path=geojson_path,
         location_nickname=location_nickname,
         downloaders=downloader,
         start_date=start_date,
