@@ -53,47 +53,48 @@ class FetchEOLoader:
 
         # Connect to DB and ensure tables are initialised
         db_connection = connect_to_db(str(self.db_path))
-        initialise_tables(db_connection)
+        try:
+            initialise_tables(db_connection)
 
-        # Get or create location ID for this polygon and nickname
-        location_id = fetch_or_create_location_id(db_connection, location_nickname, polygon)
+            # Get or create location ID for this polygon and nickname
+            location_id = fetch_or_create_location_id(db_connection, location_nickname, polygon)
 
-        # Loop through downloaders and fetch data, adding to DB after each downloader
-        all_reports = []
+            # Loop through downloaders and fetch data, adding to DB after each downloader
+            all_reports = []
 
-        for name, downloader in self.downloaders.items():
-            # Fetch data for this downloader
-            logger.info(f"Running downloader: {name}")
-            reports = downloader.fetch(
-                polygon,
-                time_frame,
-                output_dir,
-                show_progress=show_progress
-            )
-            all_reports.extend(reports)
-
-            # Add each report to DB after each downloader
-            for r in reports:
-                acq_time = getattr(r, 'acquisition_time', None)
-                year = acq_time.year if acq_time else None
-                month = acq_time.month if acq_time else None
-                upsert_file(
-                    db_connection=db_connection,
-                    location_id=location_id,
-                    location_nickname=location_nickname,
-                    data_source=getattr(r, 'data_source', None),
-                    variable_name=getattr(r, 'variable_name', None),
-                    frequency=getattr(r, 'frequency', None) if hasattr(r, 'frequency') else None,
-                    year=year,
-                    month=month,
-                    root_dir=str(Path(r.path).parent) if hasattr(r, 'path') else None,
-                    file_name=str(Path(r.path).name) if hasattr(r, 'path') else None,
-                    file_size_bytes=Path(r.path).stat().st_size if hasattr(r, 'path') and Path(r.path).exists() else None,
-                    download_status="success" if getattr(r, 'download_successful', False) else "failed",
-                    error_message=getattr(r, 'error', None),
-                    metadata=getattr(r, 'metadata', None)
+            for name, downloader in self.downloaders.items():
+                # Fetch data for this downloader
+                logger.info(f"Running downloader: {name}")
+                reports = downloader.fetch(
+                    polygon,
+                    time_frame,
+                    output_dir,
+                    show_progress=show_progress
                 )
+                all_reports.extend(reports)
 
-        # Close DB connection and return all reports
-        db_connection.close()
-        return all_reports
+                # Add each report to DB after each downloader
+                for r in reports:
+                    acq_time = getattr(r, 'acquisition_time', None)
+                    year = acq_time.year if acq_time else None
+                    month = acq_time.month if acq_time else None
+                    upsert_file(
+                        db_connection=db_connection,
+                        location_id=location_id,
+                        location_nickname=location_nickname,
+                        data_source=getattr(r, 'data_source', None),
+                        variable_name=getattr(r, 'variable_name', None),
+                        frequency=getattr(r, 'frequency', None) if hasattr(r, 'frequency') else None,
+                        year=year,
+                        month=month,
+                        root_dir=str(Path(r.path).parent) if hasattr(r, 'path') else None,
+                        file_name=str(Path(r.path).name) if hasattr(r, 'path') else None,
+                        file_size_bytes=Path(r.path).stat().st_size if hasattr(r, 'path') and Path(r.path).exists() else None,
+                        download_status="success" if getattr(r, 'download_successful', False) else "failed",
+                        error_message=getattr(r, 'error', None),
+                        metadata=getattr(r, 'metadata', None)
+                    )
+
+            return all_reports
+        finally:
+            db_connection.close()
