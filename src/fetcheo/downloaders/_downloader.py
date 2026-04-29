@@ -37,7 +37,6 @@ class BaseDownloader(ABC):
               time_frame: tuple[datetime.datetime, datetime.datetime],
               output_dir: Path,
               show_progress: bool = True,
-              **kwargs,
               ) -> list[ItemDownloadReport]:
         """
         Download all relevant files within the specified time frame for the given polygon.
