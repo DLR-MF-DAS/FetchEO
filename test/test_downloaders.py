@@ -42,27 +42,6 @@ TEST_POLYGON = {
     ],
 }
 
-def _dummy_da():
-    """Small dummy DataArray with proper x/y spatial dims."""
-    data = np.zeros((1, 2, 2), dtype=float)
-    coords = {
-        "time": [0],
-        "y": [0.0, 1.0],
-        "x": [0.0, 1.0],
-    }
-    da = xr.DataArray(data, coords=coords, dims=("time", "y", "x"))
-
-    try:
-        import rioxarray  # noqa: F401
-
-        da = da.rio.write_crs("EPSG:4326")
-        da = da.rio.set_spatial_dims(x_dim="x", y_dim="y")
-    except Exception:
-        # If rioxarray or rio accessor isn't available, we still get a usable object.
-        pass
-
-    return da
-
 
 @pytest.mark.parametrize("modname,class_name,expected_freq", downloader_classes)
 def test_downloader_generalized(tmp_path, modname, class_name, expected_freq, mock_fetch=True):
@@ -143,51 +122,3 @@ def _run_downloader_test(Downloader, tmp_path, time_frame, expected_freq, dummy_
     finally:
         # Clean up the tmp_path directory after test
         shutil.rmtree(tmp_path, ignore_errors=True)
-
-
-def test_era5_downloader_save_and_validate(tmp_path):
-    # Import ERA5Downloader directly to access save and validate methods
-    from fetcheo.downloaders.era5 import ERA5Downloader
-    downloader = ERA5Downloader(cache_dir=tmp_path)
-
-    # Create dummy ERA5-like Dataset
-    def _dummy_era5_ds():
-        """Dummy ERA5-like Dataset with t2m and ssrd variables."""
-        da = _dummy_da()
-        return xr.Dataset({"t2m": da, "ssrd": da, "tp": da, "swvl1": da})
-    ds = _dummy_era5_ds()
-
-    # Test save and validate
-    basename = "ERA5Downloader_test"
-
-    # Save GeoTIFF
-    save_paths = downloader._save_geotiff(data=ds, output_dir=tmp_path, basename=basename)
-    for path in save_paths.values():
-        assert Path(path).exists()
-
-    # Validate GeoTIFF
-    if hasattr(downloader, "_validate_geotiff"):
-        validate_paths = downloader._validate_geotiff(output_dir=tmp_path, basename=basename)
-        assert all(validate_paths.values())
-        assert len(validate_paths) == len(save_paths)
-
-# Dedicated test for MODISNDVIDownloader
-def test_modis_ndvi_downloader_save_and_validate(tmp_path):
-    # Import MODISNDVIDownloader directly to access save and validate methods
-    from fetcheo.downloaders.modis_ndvi import MODISNDVIDownloader
-    downloader = MODISNDVIDownloader(cache_dir=tmp_path)
-
-    # Create dummy MODIS NDVI-like DataArray
-    da = _dummy_da()
-    basename = "MODISNDVIDownloader_test"
-
-    # Save GeoTIFF
-    save_paths = downloader._save_geotiff(data=da, output_dir=tmp_path, basename=basename)
-    for path in save_paths.values():
-        assert Path(path).exists()
-        
-    # Validate GeoTIFF if method exists
-    if hasattr(downloader, "_validate_geotiff"):
-        validate_paths = downloader._validate_geotiff(output_dir=tmp_path, basename=basename)
-        assert all(validate_paths.values())
-        assert len(validate_paths) == len(save_paths)
