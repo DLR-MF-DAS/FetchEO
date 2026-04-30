@@ -118,10 +118,10 @@ def test_era5_core(mock_client, tmp_path):
 def test_era5_integration(tmp_path):
     """
     Integration test for ERA5Downloader: actually downloads a small ERA5 file from CDS.
-    Only runs if RUN_ERA5_INTEGRATION=1 is set in the environment.
+    Only runs if RUN_INTEGRATION=1 is set in the environment.
     """
-    if os.environ.get("RUN_ERA5_INTEGRATION") != "1":
-        pytest.skip("Set RUN_ERA5_INTEGRATION=1 to run this test (requires CDS credentials and internet).")
+    if os.environ.get("RUN_INTEGRATION") != "1":
+        pytest.skip("Set RUN_INTEGRATION=1 to run this test (requires CDS credentials and internet).")
 
     # Use the global test variables for consistency
     variables_dict = {"t2m": "2m_temperature"}
