@@ -13,7 +13,7 @@ from fetcheo.downloaders.era5 import ERA5Downloader
 
 # Global test variables for consistency
 TEST_START_DATE = datetime.datetime(2021, 1, 1)
-TEST_END_DATE = datetime.datetime(2021, 3, 31)
+TEST_END_DATE = datetime.datetime(2021, 1, 31)
 
 # Test is california bounding box
 TEST_POLYGON = {
