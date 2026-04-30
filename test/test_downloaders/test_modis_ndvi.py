@@ -105,14 +105,13 @@ def test_modis_ndvi_core(tmp_path):
     assert len(validate_paths) == len(save_paths)
 
 
-def test_era5_integration(tmp_path):
+def test_modis_ndvi_integration(tmp_path):
     """
-    Integration test for ERA5Downloader: actually downloads a small ERA5 file from CDS.
-    Only runs if RUN_ERA5_INTEGRATION=1 is set in the environment.
+    Integration test for MODISNDVIDownloader: actually downloads a small MODIS NDVI file.
+    Only runs if RUN_INTEGRATION=1 is set in the environment.
     """
-    if os.environ.get("RUN_ERA5_INTEGRATION") != "1":
-        pytest.skip("Set RUN_ERA5_INTEGRATION=1 to run this test (requires CDS credentials and internet).")
-
+    if os.environ.get("RUN_INTEGRATION") != "1":
+        pytest.skip("Set RUN_INTEGRATION=1 to run this test (requires internet access).")
     # Use the global test variables for consistency
     downloader = MODISNDVIDownloader(cache_dir=tmp_path)
     report = downloader.fetch(
