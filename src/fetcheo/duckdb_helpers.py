@@ -48,22 +48,25 @@ def fetch_or_create_location_id(db_connection, location_nickname, geojson):
     Fetch a location ID or insert if new.
     This allows users to reuse geojsons with different location names for multiple experiments.
     """
-    # Search for existing location in database
-    geojson_str = json.dumps(geojson)
+    # Store canonical JSON string (sorted keys)
+    geojson_str = json.dumps(geojson, sort_keys=True)
     row = db_connection.execute(
         "SELECT location_id, geojson FROM locations WHERE location_nickname = ?",
         [location_nickname]
     ).fetchone()
 
-    # If found, verify geojson matches
+    # If found, verify geojson matches (compare parsed objects)
     if row:
         existing_id, existing_geojson = row
-        if existing_geojson == geojson_str:
+        try:
+            existing_geojson_obj = json.loads(existing_geojson)
+        except Exception:
+            # If for some reason the DB value is not valid JSON, fallback to string compare
+            existing_geojson_obj = existing_geojson
+        if existing_geojson_obj == geojson:
             return existing_id
         else:
             raise ValueError(f"Location nickname '{location_nickname}' already exists with a different geojson.")
-    
-    # If no record, insert new location with the unique nickname
     else:
         new_location_id = str(uuid.uuid4())
         db_connection.execute(
@@ -108,7 +111,7 @@ def upsert_file(
             download_status,
             error_message,
             metadata
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         ON CONFLICT(location_id, data_source, variable_name, frequency, acquisition_time, year, month) DO UPDATE SET
             root_dir=excluded.root_dir,
             file_name=excluded.file_name,
