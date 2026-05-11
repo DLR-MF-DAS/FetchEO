@@ -68,6 +68,23 @@ def test_loader_fetch_calls_downloaders(mock_upsert, mock_locid, mock_init_table
     reports = loader.fetch(polygon, time_frame, location_nickname="testloc", output_dir=tmp_path)
     assert isinstance(reports, list)
     assert reports[0].acquisition_time == datetime.datetime(2020, 1, 1)
+    # Assert report structure and types
+    required_attrs = [
+        "acquisition_time", "path", "download_successful", "data_source",
+        "variable_name", "frequency", "error", "metadata", "polygon", "bbox"
+    ]
+    for report in reports:
+        for attr in required_attrs:
+            assert hasattr(report, attr), f"Missing attribute: {attr}"
+        assert isinstance(report.acquisition_time, datetime.datetime)
+        assert isinstance(report.path, Path)
+        assert isinstance(report.download_successful, bool)
+        assert isinstance(report.data_source, str)
+        assert isinstance(report.variable_name, str)
+        assert isinstance(report.frequency, str)
+        # error and metadata can be None or str/dict, so skip strict type check
+        assert isinstance(report.polygon, dict)
+        assert isinstance(report.bbox, (tuple, list))
     mock_connect_db.assert_called_once()
     mock_init_tables.assert_called_once()
     mock_locid.assert_called_once()
