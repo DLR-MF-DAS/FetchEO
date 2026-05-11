@@ -1,8 +1,13 @@
+import json
 import os
 import pytest
 import datetime
 from pathlib import Path
 from unittest.mock import patch, MagicMock
+
+import numpy as np
+import rasterio
+from rasterio.transform import from_bounds
 
 from fetcheo.downloaders._downloader import ItemDownloadReport
 from fetcheo.downloaders.sen3_openeo import Sen3WaterOpenEODownloader
@@ -104,3 +109,153 @@ def test_sen3_openeo_integration(tmp_path):
     # Clean up
     for f in tmp_path.iterdir():
         f.unlink()
+
+
+# ---------------------------------------------------------------------------
+# Helpers for splitting tests
+# ---------------------------------------------------------------------------
+
+_TIF_FILENAME = "S3_out_20210101.tif"
+_STAC_JSON = {
+    "links": [
+        {
+            "rel": "derived_from",
+            "href": "https://example.com/S3A_OL_2_WFR_20210101T000000_END.SAFE",
+        }
+    ],
+    "assets": {_TIF_FILENAME: {"href": f"https://example.com/{_TIF_FILENAME}"}},
+}
+
+
+def _write_multiband_tiff(path, n_bands):
+    """Write a tiny valid multi-band GeoTIFF with n_bands bands."""
+    transform = from_bounds(-124.0, 32.9, -123.9, 33.0, 2, 2)
+    profile = {
+        "driver": "GTiff",
+        "dtype": "float32",
+        "width": 2,
+        "height": 2,
+        "count": n_bands,
+        "crs": "EPSG:4326",
+        "transform": transform,
+    }
+    with rasterio.open(path, "w", **profile) as dst:
+        for b in range(1, n_bands + 1):
+            dst.write(np.ones((2, 2), dtype=np.float32) * b, b)
+
+
+def _make_download_files_side_effect(tmp_path, tif_writer):
+    """Return a callable that populates the raw temp dir when `download_files` is called."""
+
+    def _side_effect(dest_dir):
+        dest = Path(dest_dir)
+        dest.mkdir(parents=True, exist_ok=True)
+        (dest / "result.json").write_text(json.dumps(_STAC_JSON))
+        tif_writer(dest / _TIF_FILENAME)
+
+    return _side_effect
+
+
+def _configure_mock_connection(mock_connection, download_files_side_effect):
+    """Wire the mock openEO connection chain."""
+    mock_datacube = MagicMock()
+    mock_saved_cube = MagicMock()
+    mock_batch_job = MagicMock()
+    mock_results = MagicMock()
+    mock_connection.load_collection.return_value = mock_datacube
+    mock_datacube.save_result.return_value = mock_saved_cube
+    mock_saved_cube.create_job.return_value = mock_batch_job
+    mock_batch_job.start_and_wait.return_value = None
+    mock_batch_job.get_results.return_value = mock_results
+    mock_results.download_files.side_effect = download_files_side_effect
+
+
+# ---------------------------------------------------------------------------
+# Splitting unit tests
+# ---------------------------------------------------------------------------
+
+@patch("fetcheo.downloaders.sen3_openeo.openeo.connect")
+def test_split_multiband_tiff_success(mock_connect, tmp_path):
+    """A valid 2-band GeoTIFF is split into 2 single-band files with successful reports."""
+    mock_connection = MagicMock()
+    mock_connect.return_value = mock_connection
+    mock_connection.authenticate_oidc.return_value = None
+
+    _configure_mock_connection(
+        mock_connection,
+        _make_download_files_side_effect(tmp_path, lambda p: _write_multiband_tiff(p, 2)),
+    )
+
+    downloader = Sen3WaterOpenEODownloader(bands=["B01", "B02"])
+    reports = downloader.fetch(
+        polygon=TEST_POLYGON,
+        time_frame=(TEST_START_DATE, TEST_END_DATE),
+        output_dir=tmp_path,
+        show_progress=False,
+    )
+
+    assert len(reports) == 2
+    assert all(isinstance(r, ItemDownloadReport) for r in reports)
+    assert {r.variable_name for r in reports} == {"B01", "B02"}
+    assert all(r.download_successful for r in reports)
+    assert all(r.error is None for r in reports)
+    for r in reports:
+        assert Path(r.path).exists(), f"Expected output file not found: {r.path}"
+
+
+@patch("fetcheo.downloaders.sen3_openeo.openeo.connect")
+def test_split_corrupt_tiff_yields_failed_reports(mock_connect, tmp_path):
+    """A corrupt (non-TIFF) file produces failed reports for all bands without crashing."""
+    mock_connection = MagicMock()
+    mock_connect.return_value = mock_connection
+    mock_connection.authenticate_oidc.return_value = None
+
+    def _write_corrupt(path):
+        Path(path).write_bytes(b"NOT_A_VALID_TIFF")
+
+    _configure_mock_connection(
+        mock_connection,
+        _make_download_files_side_effect(tmp_path, _write_corrupt),
+    )
+
+    downloader = Sen3WaterOpenEODownloader(bands=["B01", "B02"])
+    reports = downloader.fetch(
+        polygon=TEST_POLYGON,
+        time_frame=(TEST_START_DATE, TEST_END_DATE),
+        output_dir=tmp_path,
+        show_progress=False,
+    )
+
+    assert len(reports) == 2
+    assert all(isinstance(r, ItemDownloadReport) for r in reports)
+    assert {r.variable_name for r in reports} == {"B01", "B02"}
+    assert not any(r.download_successful for r in reports)
+    assert all(r.error is not None for r in reports)
+
+
+@patch("fetcheo.downloaders.sen3_openeo.openeo.connect")
+def test_split_band_count_mismatch_yields_failed_reports(mock_connect, tmp_path):
+    """When the TIFF band count doesn't match the requested bands, all reports fail."""
+    mock_connection = MagicMock()
+    mock_connect.return_value = mock_connection
+    mock_connection.authenticate_oidc.return_value = None
+
+    # Write a 1-band TIFF but request 2 bands
+    _configure_mock_connection(
+        mock_connection,
+        _make_download_files_side_effect(tmp_path, lambda p: _write_multiband_tiff(p, 1)),
+    )
+
+    downloader = Sen3WaterOpenEODownloader(bands=["B01", "B02"])
+    reports = downloader.fetch(
+        polygon=TEST_POLYGON,
+        time_frame=(TEST_START_DATE, TEST_END_DATE),
+        output_dir=tmp_path,
+        show_progress=False,
+    )
+
+    assert len(reports) == 2
+    assert all(isinstance(r, ItemDownloadReport) for r in reports)
+    assert {r.variable_name for r in reports} == {"B01", "B02"}
+    assert not any(r.download_successful for r in reports)
+    assert all("mismatch" in (r.error or "").lower() for r in reports)
