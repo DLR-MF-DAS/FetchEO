@@ -78,6 +78,6 @@ def test_loader_handles_empty_config():
     assert loader.downloaders == {}
 
 def test_loader_handles_missing_kwargs():
-    config = {'era5': True}
+    config = {'modis_ndvi': True}
     loader = FetchEOLoader(config)
-    assert 'era5' in loader.downloaders
+    assert 'modis_ndvi' in loader.downloaders
