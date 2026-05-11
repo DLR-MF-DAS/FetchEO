@@ -9,6 +9,7 @@ from pathlib import Path
 
 import openeo
 import rasterio
+from rasterio.errors import RasterioIOError
 
 from fetcheo.downloaders._downloader import BaseDownloader, ItemDownloadReport
 
@@ -132,30 +133,68 @@ class Sen3WaterOpenEODownloader(BaseDownloader):
 
             # Split multi-band GeoTIFF into single-band files and create a report for each band
             if raw_filepath.exists():
-                with rasterio.open(raw_filepath) as src:
-
-                    # Loop through all band names
-                    for i, band_name in enumerate(self.bands, start=1):
+                try:
+                    src_file = rasterio.open(raw_filepath)
+                except (RasterioIOError, OSError) as e:
+                    print(f"Warning: Could not open {asset_filename}: {e}")
+                    for band_name in self.bands:
                         single_band_path = output_dir / f"S3_WATER_{exact_dt.strftime('%Y%m%dT%H%M%S')}_{band_name}.tif"
-                        band_data = src.read(i)
-                        profile = src.profile.copy()
-                        profile.update(count=1)
-                        with rasterio.open(single_band_path, 'w', **profile) as dst:
-                            dst.write(band_data, 1)
-                        is_valid = self._validate_geotiff(output_dir, f"S3_WATER_{exact_dt.strftime('%Y%m%dT%H%M%S')}_{band_name}")[single_band_path]
-                        error_msg = None if is_valid else "Corrupted or unreadable GeoTIFF"
-                        report = ItemDownloadReport(
+                        reports.append(ItemDownloadReport(
                             data_source="Sentinel3Water-openeo",
                             variable_name=band_name,
                             acquisition_time=exact_dt,
                             polygon=polygon,
                             bbox=self._extract_bbox(polygon),
                             path=single_band_path,
-                            download_successful=is_valid,
-                            error=error_msg,
+                            download_successful=False,
+                            error=f"Could not open GeoTIFF: {e}",
                             metadata={"original_stac_href": asset_meta.get("href", "")}
-                        )
-                        reports.append(report)
+                        ))
+                    continue
+
+                with src_file as src:
+                    if src.count != len(self.bands):
+                        band_count_error = f"Band count mismatch: expected {len(self.bands)}, got {src.count}"
+                        print(f"Warning: {band_count_error} in {asset_filename}.")
+                        for band_name in self.bands:
+                            single_band_path = output_dir / f"S3_WATER_{exact_dt.strftime('%Y%m%dT%H%M%S')}_{band_name}.tif"
+                            reports.append(ItemDownloadReport(
+                                data_source="Sentinel3Water-openeo",
+                                variable_name=band_name,
+                                acquisition_time=exact_dt,
+                                polygon=polygon,
+                                bbox=self._extract_bbox(polygon),
+                                path=single_band_path,
+                                download_successful=False,
+                                error=band_count_error,
+                                metadata={"original_stac_href": asset_meta.get("href", "")}
+                            ))
+                    else:
+                        # Loop through all band names
+                        for i, band_name in enumerate(self.bands, start=1):
+                            single_band_path = output_dir / f"S3_WATER_{exact_dt.strftime('%Y%m%dT%H%M%S')}_{band_name}.tif"
+                            try:
+                                band_data = src.read(i)
+                                profile = src.profile.copy()
+                                profile.update(count=1)
+                                with rasterio.open(single_band_path, 'w', **profile) as dst:
+                                    dst.write(band_data, 1)
+                                is_valid = self._validate_geotiff(output_dir, f"S3_WATER_{exact_dt.strftime('%Y%m%dT%H%M%S')}_{band_name}")[single_band_path]
+                                error_msg = None if is_valid else "Corrupted or unreadable GeoTIFF"
+                            except (IndexError, RasterioIOError, OSError) as band_err:
+                                is_valid = False
+                                error_msg = f"Failed to read band {band_name}: {band_err}"
+                            reports.append(ItemDownloadReport(
+                                data_source="Sentinel3Water-openeo",
+                                variable_name=band_name,
+                                acquisition_time=exact_dt,
+                                polygon=polygon,
+                                bbox=self._extract_bbox(polygon),
+                                path=single_band_path,
+                                download_successful=is_valid,
+                                error=error_msg,
+                                metadata={"original_stac_href": asset_meta.get("href", "")}
+                            ))
                 # Remove the original multi-band file after splitting
                 raw_filepath.unlink()
             else:
