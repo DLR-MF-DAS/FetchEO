@@ -26,8 +26,15 @@ TEST_POLYGON = {
     ],
 }
 
-def test_sen3_openeo_core(tmp_path):
+
+@patch("fetcheo.downloaders.sen3_openeo.openeo.connect")
+def test_sen3_openeo_core(mock_connect, tmp_path):
 	"""Test Sen3WaterOpenEODownloader: fetch (mocked), _validate_geotiff."""
+	# Mock the openeo connection and its authenticate_oidc method
+	mock_connection = MagicMock()
+	mock_connect.return_value = mock_connection
+	mock_connection.authenticate_oidc.return_value = None
+
 	dummy_report = [
 		ItemDownloadReport(
 			data_source="Sentinel3Water-openeo",
