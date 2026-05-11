@@ -37,7 +37,6 @@ class BaseDownloader(ABC):
               time_frame: tuple[datetime.datetime, datetime.datetime],
               output_dir: Path,
               show_progress: bool = True,
-              **kwargs,
               ) -> list[ItemDownloadReport]:
         """
         Download all relevant files within the specified time frame for the given polygon.
@@ -76,3 +75,9 @@ class BaseDownloader(ABC):
                 except (FileNotFoundError, RasterioIOError, OSError, ValueError, PermissionError):
                     continue
         return is_valid_dict
+    
+    def _extract_bbox(self, polygon: dict) -> list[float]:
+        """Extracts [xmin, ymin, xmax, ymax] from a GeoJSON polygon."""
+        lons = [pt[0] for pt in polygon["coordinates"][0]]
+        lats = [pt[1] for pt in polygon["coordinates"][0]]
+        return [min(lons), min(lats), max(lons), max(lats)]
