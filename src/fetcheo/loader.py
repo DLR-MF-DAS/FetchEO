@@ -85,6 +85,7 @@ class FetchEOLoader:
                         data_source=getattr(r, 'data_source', None),
                         variable_name=getattr(r, 'variable_name', None),
                         frequency=getattr(r, 'frequency', None) if hasattr(r, 'frequency') else None,
+                        acquisition_time=acq_time,
                         year=year,
                         month=month,
                         root_dir=str(Path(r.path).parent) if hasattr(r, 'path') else None,
