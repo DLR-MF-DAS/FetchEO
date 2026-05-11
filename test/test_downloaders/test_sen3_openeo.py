@@ -27,6 +27,7 @@ TEST_POLYGON = {
 }
 
 
+
 @patch("fetcheo.downloaders.sen3_openeo.openeo.connect")
 def test_sen3_openeo_core(mock_connect, tmp_path):
 	"""Test Sen3WaterOpenEODownloader: fetch (mocked), _validate_geotiff."""
@@ -35,23 +36,35 @@ def test_sen3_openeo_core(mock_connect, tmp_path):
 	mock_connect.return_value = mock_connection
 	mock_connection.authenticate_oidc.return_value = None
 
-	dummy_report = [
+	# Simulate two bands, expect two reports
+	dummy_reports = [
 		ItemDownloadReport(
 			data_source="Sentinel3Water-openeo",
-			variable_name="B01,B02",
+			variable_name="B01",
 			acquisition_time=datetime.datetime(2021, 1, 1),
 			polygon=TEST_POLYGON,
 			bbox=[-124.0, 32.0, -123.0, 33.0],
-			path=tmp_path / "S3_WATER_20210101T000000.tif",
+			path=tmp_path / "S3_WATER_20210101T000000_B01.tif",
 			download_successful=True,
 			error=None,
 			metadata=None,
-		)
+		),
+		ItemDownloadReport(
+			data_source="Sentinel3Water-openeo",
+			variable_name="B02",
+			acquisition_time=datetime.datetime(2021, 1, 1),
+			polygon=TEST_POLYGON,
+			bbox=[-124.0, 32.0, -123.0, 33.0],
+			path=tmp_path / "S3_WATER_20210101T000000_B02.tif",
+			download_successful=True,
+			error=None,
+			metadata=None,
+		),
 	]
 	with patch("fetcheo.downloaders.sen3_openeo.Sen3WaterOpenEODownloader.fetch") as mock_fetch:
-		mock_fetch.return_value = dummy_report
+		mock_fetch.return_value = dummy_reports
 		downloader = Sen3WaterOpenEODownloader(bands=["B01", "B02"])
-		report = downloader.fetch(
+		reports = downloader.fetch(
 			polygon=TEST_POLYGON,
 			time_frame=(TEST_START_DATE, TEST_END_DATE),
 			output_dir=tmp_path,
@@ -61,12 +74,12 @@ def test_sen3_openeo_core(mock_connect, tmp_path):
 			time_frame=(TEST_START_DATE, TEST_END_DATE),
 			output_dir=tmp_path,
 		)
-		assert isinstance(report, list)
-		assert all(isinstance(item, ItemDownloadReport) for item in report)
-		assert all(item.download_successful for item in report)
+		assert isinstance(reports, list)
+		assert len(reports) == 2
+		assert all(isinstance(item, ItemDownloadReport) for item in reports)
+		assert all(item.download_successful for item in reports)
+		assert {r.variable_name for r in reports} == {"B01", "B02"}
 		assert downloader.frequency == "daily"
-
-	# Optionally, test _validate_geotiff with dummy data if implemented
 
 
 def test_sen3_openeo_integration(tmp_path):
