@@ -32,8 +32,6 @@ dependencies = [
     "duckdb",
     "networkx",
     "pystac-client",
-    "pyorbital",
-    "satpy",
     "openeo"
 ]
 
