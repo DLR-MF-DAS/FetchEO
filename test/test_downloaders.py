@@ -18,7 +18,6 @@ downloader_classes = [
     ("fetcheo.downloaders.esacci_landcover", "ESACCILandCoverDownloader", "yearly"),
     ("fetcheo.downloaders.ecira", "ECIRADownloader", "yearly"),
     ("fetcheo.downloaders.sen2_aws", "Sen2AWSDownloader", "daily"),
-    ("fetcheo.downloaders.sen3_cdse", "Sen3CDSEDownloader", "daily"),
     ("fetcheo.downloaders.sen2_openeo", "Sen2OpenEODownloader", "daily"),
     ("fetcheo.downloaders.sen3_openeo", "Sen3WaterOpenEODownloader", "daily"),
 ]
