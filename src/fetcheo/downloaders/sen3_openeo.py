@@ -33,6 +33,7 @@ class Sen3WaterOpenEODownloader(BaseDownloader):
               polygon: dict, 
               time_frame: tuple[datetime.datetime, datetime.datetime],
               output_dir: Path,
+              cache_dir: Path = None,
               show_progress: bool = True) -> list[ItemDownloadReport]:
         
         reports = []
