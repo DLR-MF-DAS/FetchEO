@@ -72,16 +72,18 @@ def test_modis_ndvi_core(tmp_path):
 
     with patch("fetcheo.downloaders.modis_ndvi.MODISNDVIDownloader.fetch") as mock_download:
         mock_download.return_value = dummy_report
-        downloader = MODISNDVIDownloader(cache_dir=tmp_path)
+        downloader = MODISNDVIDownloader()
         report = downloader.fetch(
             polygon=TEST_POLYGON,
             time_frame=(TEST_START_DATE, TEST_END_DATE),
             output_dir=tmp_path,
+            cache_dir=tmp_path
         )
         mock_download.assert_called_once_with(
             polygon=TEST_POLYGON,
             time_frame=(TEST_START_DATE, TEST_END_DATE),
             output_dir=tmp_path,
+            cache_dir=tmp_path
         )
         assert isinstance(report, list)
         assert all(isinstance(item, ItemDownloadReport) for item in report)
@@ -113,11 +115,12 @@ def test_modis_ndvi_integration(tmp_path):
     if os.environ.get("RUN_INTEGRATION") != "1":
         pytest.skip("Set RUN_INTEGRATION=1 to run this test (requires internet access).")
     # Use the global test variables for consistency
-    downloader = MODISNDVIDownloader(cache_dir=tmp_path)
+    downloader = MODISNDVIDownloader()
     report = downloader.fetch(
         polygon=TEST_POLYGON,
         time_frame=(TEST_START_DATE, TEST_END_DATE),
         output_dir=tmp_path,
+        cache_dir=tmp_path,
         show_progress=False,
     )
     assert isinstance(report, list)

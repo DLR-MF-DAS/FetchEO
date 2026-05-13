@@ -82,16 +82,18 @@ def test_era5_core(mock_client, tmp_path):
 
     with patch("fetcheo.downloaders.era5.ERA5Downloader.fetch") as mock_download:
         mock_download.return_value = dummy_report
-        downloader = ERA5Downloader(cache_dir=tmp_path)
+        downloader = ERA5Downloader()
         report = downloader.fetch(
             polygon=TEST_POLYGON,
             time_frame=(TEST_START_DATE, TEST_END_DATE),
             output_dir=tmp_path,
+            cache_dir=tmp_path
         )
         mock_download.assert_called_once_with(
             polygon=TEST_POLYGON,
             time_frame=(TEST_START_DATE, TEST_END_DATE),
             output_dir=tmp_path,
+            cache_dir=tmp_path
         )
         assert isinstance(report, list)
         assert all(isinstance(item, ItemDownloadReport) for item in report)
@@ -125,11 +127,12 @@ def test_era5_integration(tmp_path):
 
     # Use the global test variables for consistency
     variables_dict = {"t2m": "2m_temperature"}
-    downloader = ERA5Downloader(variables_dict=variables_dict, cache_dir=tmp_path)
+    downloader = ERA5Downloader(variables_dict=variables_dict)
     report = downloader.fetch(
         polygon=TEST_POLYGON,
         time_frame=(TEST_START_DATE, TEST_END_DATE),
         output_dir=tmp_path,
+        cache_dir=tmp_path,
         show_progress=False,
     )
     assert isinstance(report, list)
