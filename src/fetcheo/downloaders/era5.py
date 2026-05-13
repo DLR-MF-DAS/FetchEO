@@ -30,7 +30,6 @@ class ERA5Downloader(BaseDownloader):
                                 "tp": "total_precipitation", 
                                 "swvl1": "volumetric_soil_water_layer_1"},
         engine: str = "netcdf4",
-        cache_dir: Union[str, Path] = "era5_cache",
     ):
         # Initialize ERA5Downloader with specified parameters.
         self.engine = engine
@@ -39,10 +38,6 @@ class ERA5Downloader(BaseDownloader):
         self.dataset = "reanalysis-era5-land-monthly-means"
         self.time_key = "time"
         self.client = cdsapi.Client()
-
-        # Set up cache directory
-        self.cache_dir = Path(cache_dir)
-        self.cache_dir.mkdir(parents=True, exist_ok=True)
 
     @property
     def frequency(self) -> str:
@@ -53,8 +48,13 @@ class ERA5Downloader(BaseDownloader):
         polygon: dict,
         time_frame: tuple[datetime.datetime, datetime.datetime],
         output_dir: Path,
+        cache_dir: Union[str, Path] = "era5_cache",
         show_progress: bool = True,
     ) -> list[ItemDownloadReport]:
+        # Set up cache directory
+        self.cache_dir = Path(cache_dir)
+        self.cache_dir.mkdir(parents=True, exist_ok=True)
+
         # Extract start and end year/month from time_frame
         start_year, start_month = time_frame[0].year, time_frame[0].month
         final_year, final_month = time_frame[1].year, time_frame[1].month
