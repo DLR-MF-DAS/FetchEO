@@ -91,6 +91,7 @@ def main(downloader, geojson_path, start_date, end_date, location_nickname, outp
 
     # Place output in a subfolder under the location nickname
     data_output_dir = str(Path(output_dir) / location_nickname)
+    cache_dir = str(Path(output_dir) / location_nickname / "cache")
 
     # Download data and add to DB
     loader.fetch(
@@ -98,6 +99,7 @@ def main(downloader, geojson_path, start_date, end_date, location_nickname, outp
         time_frame=(start_dt, end_dt),
         location_nickname=location_nickname,
         output_dir=data_output_dir,
+        cache_dir=cache_dir,
         show_progress=show_progress
     )
 
