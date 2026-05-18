@@ -6,6 +6,7 @@ import shutil
 import pyproj
 from tqdm import tqdm
 from pathlib import Path
+from typing import Union
 
 import openeo
 import rasterio
@@ -33,14 +34,14 @@ class Sen3WaterOpenEODownloader(BaseDownloader):
               polygon: dict, 
               time_frame: tuple[datetime.datetime, datetime.datetime],
               output_dir: Path,
-              cache_dir: Path = None,
+              cache_dir: Union[str, Path] = "sen3_water_cache",
               show_progress: bool = True) -> list[ItemDownloadReport]:
         
         reports = []
         output_dir = Path(output_dir)
         output_dir.mkdir(parents=True, exist_ok=True)
 
-        temp_dir = output_dir / ".openeo_raw"
+        temp_dir = cache_dir
         temp_dir.mkdir(exist_ok=True)
 
         # 1. Standard WGS84 bounding box (The "Old Way" that worked)
@@ -107,7 +108,6 @@ class Sen3WaterOpenEODownloader(BaseDownloader):
                     date_key = part[:8] 
                     date_to_true_acq[date_key] = part
                     break
-
         assets = stac_data.get("assets", {})
 
         # 7. Process downloaded TIFF assets (split to single-band files and reports)
@@ -215,8 +215,8 @@ class Sen3WaterOpenEODownloader(BaseDownloader):
                     )
                     reports.append(report)
 
-        if temp_dir.exists():
-            shutil.rmtree(temp_dir)
+        # if temp_dir.exists():
+        #     shutil.rmtree(temp_dir)
         return reports
     
     def _get_all_bands(self) -> list[str]:
