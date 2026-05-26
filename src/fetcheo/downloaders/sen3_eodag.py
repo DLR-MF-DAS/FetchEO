@@ -187,6 +187,14 @@ class Sentinel3SynergyDownloader(BaseDownloader):
           "Oa17_reflectance": "Oa17_reflectance",
           "Oa18_reflectance": "Oa18_reflectance",
           "Oa21_reflectance": "Oa21_reflectance",
+          "CHL_NN": "chl_nn",
+          "CHL_OC4ME": "chl_oc4me",
+          "ADG443_NN": "iop_nn",
+          "IWV": "iwv",
+          "KD490_M07": "trsp",
+          "TSM_NN": "tsm_nn",
+          "A865": "w_aer",
+          "T865": "w_aer",
           "WQSF": "wqsf"
           }
 
