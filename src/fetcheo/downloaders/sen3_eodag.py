@@ -15,21 +15,31 @@ from fetcheo.downloaders._downloader import BaseDownloader, ItemDownloadReport
 
 
 class Sentinel3SynergyDownloader(BaseDownloader):
+
     def __init__(self, username: Optional[str] = None, password: Optional[str] = None, variables_to_files_map: Optional[List[str]] = None):
         """
         Streamlined downloader for Sentinel-3 Synergy (S3_SY_2_SYN) products.
+        Checks for required credentials in arguments or environment variables.
         """
         super().__init__()
         self.variables_to_files_map = variables_to_files_map
         if variables_to_files_map is None:
-          self.variables_to_files_map = self._get_all_variables_to_files_map()
+            self.variables_to_files_map = self._get_all_variables_to_files_map()
 
-        # 1. SET CREDENTIALS FIRST so EODAG sees them when it boots up
-        if username and password:
-            os.environ["EODAG__COP_DATASPACE__AUTH__CREDENTIALS__USERNAME"] = username
-            os.environ["EODAG__COP_DATASPACE__AUTH__CREDENTIALS__PASSWORD"] = password
+        # Check for credentials: use arguments if provided, else fall back to env vars
+        username = username or os.environ.get("CDSE_USERNAME")
+        password = password or os.environ.get("CDSE_PASSWORD")
 
-        # 2. NOW initialize EODAG
+        if not username or not password:
+            raise ValueError(
+                "CDSE credentials required: provide username and password as arguments or set CDSE_USERNAME and CDSE_PASSWORD environment variables."
+            )
+
+        # Set EODAG environment variables for credentials
+        os.environ["EODAG__COP_DATASPACE__AUTH__CREDENTIALS__USERNAME"] = username
+        os.environ["EODAG__COP_DATASPACE__AUTH__CREDENTIALS__PASSWORD"] = password
+
+        # Initialize EODAG
         self.dag = EODataAccessGateway()
         self.dag.set_preferred_provider("cop_dataspace")
 
