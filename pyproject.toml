@@ -34,7 +34,8 @@ dependencies = [
     "pystac-client",
     "pyorbital",
     "satpy",
-    "openeo"
+    "openeo",
+    "eodag",
 ]
 
 [project.urls]
