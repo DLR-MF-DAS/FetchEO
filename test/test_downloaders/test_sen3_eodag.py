@@ -2,9 +2,7 @@ import os
 import pytest
 import datetime
 from pathlib import Path
-from unittest.mock import patch, MagicMock
-
-from rasterio.transform import from_bounds
+from unittest.mock import patch
 
 from fetcheo.downloaders._downloader import ItemDownloadReport
 from fetcheo.downloaders.sen3_eodag import Sentinel3SynergyDownloader
