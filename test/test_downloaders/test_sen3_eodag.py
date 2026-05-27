@@ -28,8 +28,11 @@ TEST_POLYGON = {
 
 
 @patch("fetcheo.downloaders.sen3_eodag.EODataAccessGateway")
-def test_sen3_eodag_core(mock_eodag, tmp_path):
+def test_sen3_eodag_core(mock_eodag, tmp_path, monkeypatch):
     """Test Sentinel3SynergyDownloader: fetch (mocked), report handling."""
+    # Set dummy credentials in environment for this test only
+    monkeypatch.setenv("CDSE_USERNAME", "dummy_user")
+    monkeypatch.setenv("CDSE_PASSWORD", "dummy_pass")
     # Simulate two bands, expect two reports
     dummy_reports = [
         ItemDownloadReport(
