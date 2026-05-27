@@ -62,10 +62,13 @@ class Sentinel3SynergyDownloader(BaseDownloader):
               show_progress: bool = True,
               ) -> list[ItemDownloadReport]:
 
-        # Make output directory
+        # Make output/cache directories
         output_dir.mkdir(parents=True, exist_ok=True)
-        if cache_dir:
-          os.environ["EODAG__COP_DATASPACE__DOWNLOAD__OUTPUT_DIR"] = str(cache_dir)
+        if cache_dir is None:
+            cache_dir = output_dir / "cache"
+        cache_dir = Path(cache_dir)
+        cache_dir.mkdir(parents=True, exist_ok=True)
+        os.environ["EODAG__COP_DATASPACE__DOWNLOAD__OUTPUT_DIR"] = str(cache_dir)
         bbox = self._extract_bbox(polygon)
 
         # The CDSE STAC backend requires the 'collection' key
