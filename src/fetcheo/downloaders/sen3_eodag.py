@@ -62,11 +62,14 @@ class Sentinel3SynergyDownloader(BaseDownloader):
               show_progress: bool = True,
               ) -> list[ItemDownloadReport]:
 
-        # Make output/cache directories
-        output_dir.mkdir(parents=True, exist_ok=True)
+        # Normalize path inputs and make output/cache directories
+        output_dir = Path(output_dir)
         if cache_dir is None:
             cache_dir = output_dir / "cache"
-        cache_dir = Path(cache_dir)
+        else:
+            cache_dir = Path(cache_dir)
+
+        output_dir.mkdir(parents=True, exist_ok=True)
         cache_dir.mkdir(parents=True, exist_ok=True)
         os.environ["EODAG__COP_DATASPACE__DOWNLOAD__OUTPUT_DIR"] = str(cache_dir)
         bbox = self._extract_bbox(polygon)
