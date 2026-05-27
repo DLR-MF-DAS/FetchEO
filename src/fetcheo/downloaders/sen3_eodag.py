@@ -2,7 +2,7 @@ import os
 import datetime
 from tqdm import tqdm
 from pathlib import Path
-from typing import Optional, List
+from typing import Optional
 
 import rioxarray
 import numpy as np
