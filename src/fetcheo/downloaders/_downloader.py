@@ -36,6 +36,7 @@ class BaseDownloader(ABC):
               polygon: dict, 
               time_frame: tuple[datetime.datetime, datetime.datetime],
               output_dir: Path,
+              cache_dir: Optional[Path] = None,
               show_progress: bool = True,
               ) -> list[ItemDownloadReport]:
         """

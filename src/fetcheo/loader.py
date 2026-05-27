@@ -19,6 +19,7 @@ DOWNLOADER_DICT = {
     'era5': 'fetcheo.downloaders.era5.ERA5Downloader',
     'modis_ndvi': 'fetcheo.downloaders.modis_ndvi.MODISNDVIDownloader',
     'sen3_openeo': 'fetcheo.downloaders.sen3_openeo.Sen3WaterOpenEODownloader',
+    'sen3_eodag': 'fetcheo.downloaders.sen3_eodag.Sentinel3SynergyDownloader',
     # Add more as needed
 }
 
@@ -44,13 +45,21 @@ class FetchEOLoader:
               time_frame: Tuple, 
               location_nickname: str, 
               output_dir: str = "data", 
+              cache_dir: str = None,
               show_progress: bool = True) -> List[Any]:
         """
         Fetches data using all enabled downloaders and adds results to DuckDB after each downloader.
         """
-        #
+        # Ensure output_dir is a Path object
         output_dir = Path(output_dir)
+        output_dir.mkdir(parents=True, exist_ok=True)
 
+        # Create cache directory if not provided
+        if cache_dir is None:
+            base_cache_dir = output_dir / location_nickname / "cache"
+        else:
+            base_cache_dir = Path(cache_dir)
+        
         # Connect to DB and ensure tables are initialised
         db_connection = connect_to_db(str(self.db_path))
         try:
@@ -63,12 +72,17 @@ class FetchEOLoader:
             all_reports = []
 
             for name, downloader in self.downloaders.items():
+                # Set up cache directory for this downloader
+                downloader_cache_dir = base_cache_dir / name
+                downloader_cache_dir.mkdir(parents=True, exist_ok=True)
+
                 # Fetch data for this downloader
                 logger.info(f"Running downloader: {name}")
                 reports = downloader.fetch(
                     polygon,
                     time_frame,
                     output_dir,
+                    cache_dir=downloader_cache_dir,
                     show_progress=show_progress
                 )
                 all_reports.extend(reports)

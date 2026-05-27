@@ -34,13 +34,8 @@ class MODISNDVIDownloader(BaseDownloader):
             "{year}/MODIS-C061_MOD13C2_NDVI__LPDAAC__0.05deg__MONTHLY__"
             "UHAM-ICDC__{year}{month:02d}__fv0.01.nc"
         ),
-        cache_dir: Union[str, Path] = "modis_ndvi_cache",
     ):
         self.base_url = base_url
-
-        # Set up cache directory
-        self.cache_dir = Path(cache_dir)
-        self.cache_dir.mkdir(parents=True, exist_ok=True)
 
     @property
     def frequency(self) -> str:
@@ -51,11 +46,17 @@ class MODISNDVIDownloader(BaseDownloader):
         polygon: dict,
         time_frame: tuple[datetime.datetime, datetime.datetime],
         output_dir: Path,
+        cache_dir: Union[str, Path] = "modis_ndvi_cache",
         show_progress: bool = True,
     ) -> list[ItemDownloadReport]:
         """
         Download and clip MONTHLY MODIS NDVI data to a GeoJSON geometry.
         """
+        # Set up cache directory
+        self.cache_dir = Path(cache_dir)
+        self.cache_dir.mkdir(parents=True, exist_ok=True)
+
+        # Get list of (year, month) tuples to download
         start_year, start_month = time_frame[0].year, time_frame[0].month
         final_year, final_month = time_frame[1].year, time_frame[1].month
 

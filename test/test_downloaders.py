@@ -109,6 +109,7 @@ def _run_downloader_test(Downloader, tmp_path, time_frame, expected_freq, dummy_
             polygon=TEST_POLYGON,
             time_frame=time_frame,
             output_dir=tmp_path,
+            cache_dir=tmp_path,
         )
         assert isinstance(report, list)
         assert all(isinstance(item, ItemDownloadReport) for item in report)

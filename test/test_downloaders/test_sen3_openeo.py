@@ -73,11 +73,13 @@ def test_sen3_openeo_core(mock_connect, tmp_path):
             polygon=TEST_POLYGON,
             time_frame=(TEST_START_DATE, TEST_END_DATE),
             output_dir=tmp_path,
+            cache_dir=tmp_path,
         )
         mock_fetch.assert_called_once_with(
             polygon=TEST_POLYGON,
             time_frame=(TEST_START_DATE, TEST_END_DATE),
             output_dir=tmp_path,
+            cache_dir=tmp_path,
         )
         assert isinstance(reports, list)
         assert len(reports) == 2
@@ -100,6 +102,7 @@ def test_sen3_openeo_integration(tmp_path):
         polygon=TEST_POLYGON,
         time_frame=(TEST_START_DATE, TEST_END_DATE),
         output_dir=tmp_path,
+        cache_dir=tmp_path,
         show_progress=False,
     )
     assert isinstance(report, list)
@@ -191,6 +194,7 @@ def test_split_multiband_tiff_success(mock_connect, tmp_path):
         polygon=TEST_POLYGON,
         time_frame=(TEST_START_DATE, TEST_END_DATE),
         output_dir=tmp_path,
+        cache_dir=tmp_path,
         show_progress=False,
     )
 
@@ -223,6 +227,7 @@ def test_split_corrupt_tiff_yields_failed_reports(mock_connect, tmp_path):
         polygon=TEST_POLYGON,
         time_frame=(TEST_START_DATE, TEST_END_DATE),
         output_dir=tmp_path,
+        cache_dir=tmp_path,
         show_progress=False,
     )
 
@@ -251,6 +256,7 @@ def test_split_band_count_mismatch_yields_failed_reports(mock_connect, tmp_path)
         polygon=TEST_POLYGON,
         time_frame=(TEST_START_DATE, TEST_END_DATE),
         output_dir=tmp_path,
+        cache_dir=tmp_path,
         show_progress=False,
     )
 

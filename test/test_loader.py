@@ -65,7 +65,13 @@ def test_loader_fetch_calls_downloaders(mock_upsert, mock_locid, mock_init_table
     }
     polygon = TEST_POLYGON
     time_frame = (datetime.datetime(2020, 1, 1), datetime.datetime(2020, 1, 31))
-    reports = loader.fetch(polygon, time_frame, location_nickname="testloc", output_dir=tmp_path)
+    reports = loader.fetch(
+        polygon, 
+        time_frame, 
+        location_nickname="testloc", 
+        output_dir=tmp_path, 
+        cache_dir=tmp_path
+        )
     assert isinstance(reports, list)
     assert reports[0].acquisition_time == datetime.datetime(2020, 1, 1)
     # Assert report structure and types
