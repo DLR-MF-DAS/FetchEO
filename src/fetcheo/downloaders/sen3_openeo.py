@@ -41,8 +41,8 @@ class Sen3WaterOpenEODownloader(BaseDownloader):
         output_dir = Path(output_dir)
         output_dir.mkdir(parents=True, exist_ok=True)
 
-        temp_dir = cache_dir
-        temp_dir.mkdir(exist_ok=True)
+        temp_dir = Path(cache_dir)
+        temp_dir.mkdir(parents=True, exist_ok=True)
 
         # 1. Standard WGS84 bounding box (The "Old Way" that worked)
         bbox_deg = self._extract_bbox(polygon)
