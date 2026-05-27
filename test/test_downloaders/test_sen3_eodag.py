@@ -91,8 +91,7 @@ def test_sen3_eodag_integration(tmp_path):
     This test is mocked for safety; remove the patch to run a real integration test.
     """
     if os.environ.get("RUN_INTEGRATION") != "1":
-        pytest.skip("Set RUN_INTEGRATION=1 to run this test (requires openEO credentials and internet).")
-
+        pytest.skip("Set RUN_INTEGRATION=1 to run this test (requires Copernicus Data Space credentials and internet).")
     downloader = Sentinel3SynergyDownloader(
         variables_to_files_map={
             "Oa01_reflectance": "Oa01_reflectance",
