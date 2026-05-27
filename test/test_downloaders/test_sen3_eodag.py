@@ -30,9 +30,8 @@ TEST_POLYGON = {
 
 
 @patch("fetcheo.downloaders.sen3_eodag.EODataAccessGateway")
-def test_sen3_openeo_core(mock_eodag, tmp_path):
-    """Test Sen3WaterOpenEODownloader: fetch (mocked), _validate_geotiff."""
-
+def test_sen3_eodag_core(mock_eodag, tmp_path):
+    """Test Sentinel3SynergyDownloader: fetch (mocked), report handling."""
     # Simulate two bands, expect two reports
     dummy_reports = [
         ItemDownloadReport(
