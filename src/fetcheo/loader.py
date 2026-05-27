@@ -19,6 +19,7 @@ DOWNLOADER_DICT = {
     'era5': 'fetcheo.downloaders.era5.ERA5Downloader',
     'modis_ndvi': 'fetcheo.downloaders.modis_ndvi.MODISNDVIDownloader',
     'sen3_openeo': 'fetcheo.downloaders.sen3_openeo.Sen3WaterOpenEODownloader',
+    'sen3_eodag': 'fetcheo.downloaders.sen3_eodag.Sentinel3SynergyDownloader',
     # Add more as needed
 }
 
