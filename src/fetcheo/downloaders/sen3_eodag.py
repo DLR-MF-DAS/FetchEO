@@ -16,7 +16,12 @@ from fetcheo.downloaders._downloader import BaseDownloader, ItemDownloadReport
 
 class Sentinel3SynergyDownloader(BaseDownloader):
 
-    def __init__(self, username: Optional[str] = None, password: Optional[str] = None, variables_to_files_map: Optional[List[str]] = None):
+    def __init__(
+        self,
+        username: Optional[str] = None,
+        password: Optional[str] = None,
+        variables_to_files_map: Optional[dict[str, str]] = None,
+    ):
         """
         Streamlined downloader for Sentinel-3 Synergy (S3_SY_2_SYN) products.
         Checks for required credentials in arguments or environment variables.
