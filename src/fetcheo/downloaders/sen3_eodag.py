@@ -99,9 +99,10 @@ class Sentinel3SynergyDownloader(BaseDownloader):
 
         # Loop through all images and download them
         for item in tqdm(search_results, desc="Downloading Sentinel-3 images", disable=not show_progress):
-            acq_time_str = item.properties.get("datetime", "").split(".")[0]
-            self.acq_time_str = item.properties
-            acq_time = datetime.datetime.strptime(acq_time_str, "%Y-%m-%dT%H:%M:%S")
+            acq_time_raw = item.properties.get("datetime")
+            if not acq_time_raw:
+                raise ValueError("Missing 'datetime' in product properties")
+            acq_time = datetime.datetime.fromisoformat(acq_time_raw.replace("Z", "+00:00"))
 
             # Download current image file
             try:
