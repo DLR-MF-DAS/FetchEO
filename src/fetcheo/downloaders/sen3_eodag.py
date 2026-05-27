@@ -23,7 +23,7 @@ class Sentinel3SynergyDownloader(BaseDownloader):
         variables_to_files_map: Optional[dict[str, str]] = None,
     ):
         """
-        Streamlined downloader for Sentinel-3 Synergy (S3_SY_2_SYN) products.
+        Streamlined downloader for Sentinel-3 OLCI Level-2 Water (S3_OLCI_L2WRR) products.
         Checks for required credentials in arguments or environment variables.
         """
         super().__init__()
