@@ -88,7 +88,7 @@ def test_sen3_eodag_core(mock_eodag, tmp_path):
 def test_sen3_eodag_integration(tmp_path):
     """
     Integration test for Sentinel3SynergyDownloader: only runs if RUN_INTEGRATION=1 is set.
-    This test is mocked for safety; remove the patch to run a real integration test.
+    This test performs real network calls and requires credentials; it should remain skipped in CI.
     """
     if os.environ.get("RUN_INTEGRATION") != "1":
         pytest.skip("Set RUN_INTEGRATION=1 to run this test (requires Copernicus Data Space credentials and internet).")
