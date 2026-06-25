@@ -10,6 +10,7 @@ import xarray as xr
 from eodag import EODataAccessGateway
 from pyresample.kd_tree import resample_nearest
 from pyresample.geometry import SwathDefinition, create_area_def
+from rioxarray.merge import merge_arrays
 
 from fetcheo.downloaders._downloader import BaseDownloader, ItemDownloadReport
 
@@ -84,6 +85,7 @@ class Sentinel3SynergyDownloader(BaseDownloader):
 
         # Search catalog for Sentinel-3 water images
         reports = []
+        grouped_tiles: dict[tuple[datetime.datetime, str], dict] = {}
         try:
             search_results = self.dag.search(**search_criteria)
         except Exception as e:
@@ -121,8 +123,20 @@ class Sentinel3SynergyDownloader(BaseDownloader):
 
                 # Process every requested variable
                 for variable_name, nc_filename in self.variables_to_files_map.items():
+                    group_key = (acq_time, variable_name)
                     basename = f"S3_{acq_time.strftime('%Y%m%d_%H%M%S')}_{variable_name}"
                     expected_tif = self._get_filepaths(output_dir, basename)[0]
+                    grouped_entry = grouped_tiles.setdefault(
+                        group_key,
+                        {
+                            "basename": basename,
+                            "expected_tif": expected_tif,
+                            "arrays": [],
+                            "errors": [],
+                            "metadata": [],
+                        },
+                    )
+                    grouped_entry["metadata"].append(item.properties)
 
                     # Load netcdf using xarray
                     try:
@@ -131,50 +145,51 @@ class Sentinel3SynergyDownloader(BaseDownloader):
                                                         nc_filename=nc_filename,
                                                         variable_name=variable_name)
 
-                        da_coords = self._load_netcdf_as_array(cache_dir=cache_dir,
-                                                        sen3_dir=sen3_dir,
-                                                        nc_filename=nc_filename,
-                                                        variable_name=variable_name)
-
-                        # Clip data array to region and save as geotiff
-                        self._clip_and_save_array_as_cog(da=da,
-                                                         sen3_dir=sen3_dir,
-                                                         polygon=polygon,
-                                                         output_path=output_dir / f"{basename}.tif")
-
-                        # Validate the file is loadable
-                        success = self._validate_geotiff(output_dir, basename).get(expected_tif, False)
-                        reports.append(
-                            ItemDownloadReport(
-                                data_source="Sentinel-3",
-                                variable_name=variable_name,
-                                acquisition_time=acq_time,
-                                polygon=polygon,
-                                bbox=bbox,
-                                path=expected_tif,
-                                download_successful=success,
-                                error=None if success else "GeoTIFF validation failed.",
-                                metadata=item.properties
-                            )
-                        )
+                        clipped_array = self._clip_array_to_grid(da=da,
+                                                                 sen3_dir=sen3_dir,
+                                                                 polygon=polygon)
+                        grouped_entry["arrays"].append(clipped_array)
 
                     except Exception as e:
-                      reports.append(
-                            ItemDownloadReport(
-                                data_source="Sentinel-3",
-                                variable_name=variable_name,
-                                acquisition_time=acq_time,
-                                polygon=polygon,
-                                bbox=bbox,
-                                path=expected_tif,
-                                download_successful=False,
-                                error=str(e),
-                                metadata=item.properties
-                            )
-                        )
+                        grouped_entry["errors"].append(str(e))
 
             except Exception as e:
                 for variable_name, _ in self.variables_to_files_map.items():
+                    group_key = (acq_time, variable_name)
+                    basename = f"S3_{acq_time.strftime('%Y%m%d_%H%M%S')}_{variable_name}"
+                    expected_tif = self._get_filepaths(output_dir, basename)[0]
+                    grouped_entry = grouped_tiles.setdefault(
+                        group_key,
+                        {
+                            "basename": basename,
+                            "expected_tif": expected_tif,
+                            "arrays": [],
+                            "errors": [],
+                            "metadata": [],
+                        },
+                    )
+                    grouped_entry["errors"].append(str(e))
+
+        reports = []
+        for (acq_time, variable_name), grouped_entry in grouped_tiles.items():
+            basename = grouped_entry["basename"]
+            expected_tif = grouped_entry["expected_tif"]
+            tile_arrays = grouped_entry["arrays"]
+            tile_errors = grouped_entry["errors"]
+
+            if tile_arrays:
+                try:
+                    self._merge_and_save_arrays_as_cog(
+                        arrays=tile_arrays,
+                        output_path=expected_tif,
+                    )
+                    success = self._validate_geotiff(output_dir, basename).get(expected_tif, False)
+                    error_message = None
+                    if tile_errors:
+                        error_message = "Some tiles failed before mosaicking: " + "; ".join(tile_errors)
+                    elif not success:
+                        error_message = "GeoTIFF validation failed."
+
                     reports.append(
                         ItemDownloadReport(
                             data_source="Sentinel-3",
@@ -182,11 +197,41 @@ class Sentinel3SynergyDownloader(BaseDownloader):
                             acquisition_time=acq_time,
                             polygon=polygon,
                             bbox=bbox,
-                            path=output_dir,
-                            download_successful=False,
-                            error=str(e)
+                            path=expected_tif,
+                            download_successful=success and not tile_errors,
+                            error=error_message,
+                            metadata=self._build_group_metadata(grouped_entry["metadata"]),
                         )
                     )
+                except Exception as e:
+                    reports.append(
+                        ItemDownloadReport(
+                            data_source="Sentinel-3",
+                            variable_name=variable_name,
+                            acquisition_time=acq_time,
+                            polygon=polygon,
+                            bbox=bbox,
+                            path=expected_tif,
+                            download_successful=False,
+                            error=str(e),
+                            metadata=self._build_group_metadata(grouped_entry["metadata"]),
+                        )
+                    )
+            else:
+                error_message = "; ".join(tile_errors) if tile_errors else "No tiles were available for mosaicking."
+                reports.append(
+                    ItemDownloadReport(
+                        data_source="Sentinel-3",
+                        variable_name=variable_name,
+                        acquisition_time=acq_time,
+                        polygon=polygon,
+                        bbox=bbox,
+                        path=expected_tif,
+                        download_successful=False,
+                        error=error_message,
+                        metadata=self._build_group_metadata(grouped_entry["metadata"]),
+                    )
+                )
 
         return reports
 
@@ -228,16 +273,39 @@ class Sentinel3SynergyDownloader(BaseDownloader):
             raise FileNotFoundError(f"Missing {nc_filename} in {sen3_dir.name}")
 
         # Load netcdf file and return as data array
-        array = xr.open_dataset(nc_path)
-        return array[variable_name]
+        with xr.open_dataset(nc_path) as array:
+            return array[variable_name].load()
 
 
-    def _clip_and_save_array_as_cog(self, da, sen3_dir, polygon, output_path):
+    def _build_group_metadata(self, metadata_items: list[dict]) -> Optional[dict]:
+        if not metadata_items:
+            return None
+        if len(metadata_items) == 1:
+            return metadata_items[0]
+        return {"source_products": metadata_items}
+
+
+    def _merge_and_save_arrays_as_cog(self, arrays: list[xr.DataArray], output_path: Path) -> xr.DataArray:
+        if len(arrays) == 1:
+            merged_array = arrays[0]
+        else:
+            merged_array = merge_arrays(arrays, nodata=np.nan)
+
+        merged_array.rio.write_crs("EPSG:4326", inplace=True)
+        merged_array.rio.to_raster(
+            output_path,
+            driver="COG",
+            compress="DEFLATE",
+            tiled=True,
+        )
+        return merged_array
+
+
+    def _clip_array_to_grid(self, da, sen3_dir, polygon):
         """
         Pipeline for degree-based mapping (EPSG:4326): 
-        1. Trims distorted swath edges.
-        2. Crops to bounding box to save RAM.
-        3. Resamples to a rigid 0.01 degree latitude/longitude grid.
+        1. Crops to bounding box to save RAM.
+        2. Resamples to a rigid 0.01 degree latitude/longitude grid.
         """
         # 1. Extract geographic bounding box (Degrees)
         min_lon, min_lat, max_lon, max_lat = self._extract_bbox(polygon)
@@ -251,26 +319,15 @@ class Sentinel3SynergyDownloader(BaseDownloader):
             lons = geo_ds['longitude'].values
             lats = geo_ds['latitude'].values
 
-        # ---------------------------------------------------------
-        # STEP 1: TRIM THE SWATH EDGES (Quality Control)
-        # ---------------------------------------------------------
-        # Drop the outer 15% on both sides to remove atmospheric distortion
-        total_cols = lons.shape[1]
-        trim_amount = int(total_cols * 0.15) 
-
-        lons = lons[:, trim_amount:-trim_amount]
-        lats = lats[:, trim_amount:-trim_amount]
-        
         dim_y, dim_x = da.dims[0], da.dims[1]
-        da_trimmed = da.isel({dim_x: slice(trim_amount, -trim_amount)})
 
         # ---------------------------------------------------------
-        # STEP 2: ROUGH CROP BY LAT/LON (Save Memory)
+        # STEP 1: ROUGH CROP BY LAT/LON (Save Memory)
         # ---------------------------------------------------------
         valid_pixels = (lats >= min_lat) & (lats <= max_lat) & (lons >= min_lon) & (lons <= max_lon)
         
         if not valid_pixels.any():
-            raise ValueError(f"No data found in bounds after edge trimming. Variable: {da.name}")
+            raise ValueError(f"No data found in bounds. Variable: {da.name}")
 
         valid_rows = np.any(valid_pixels, axis=1)
         valid_cols = np.any(valid_pixels, axis=0)
@@ -284,10 +341,10 @@ class Sentinel3SynergyDownloader(BaseDownloader):
 
         lats_cropped = lats[rmin:rmax, cmin:cmax]
         lons_cropped = lons[rmin:rmax, cmin:cmax]
-        da_cropped = da_trimmed.isel({dim_y: slice(rmin, rmax), dim_x: slice(cmin, cmax)})
+        da_cropped = da.isel({dim_y: slice(rmin, rmax), dim_x: slice(cmin, cmax)})
 
         # ---------------------------------------------------------
-        # STEP 3: DEFINE THE EPSG:4326 GRID
+        # STEP 2: DEFINE THE EPSG:4326 GRID
         # ---------------------------------------------------------
         proj_dict = {"proj": "longlat", "datum": "WGS84"}
 
@@ -303,7 +360,7 @@ class Sentinel3SynergyDownloader(BaseDownloader):
         )
 
         # ---------------------------------------------------------
-        # STEP 4: RESAMPLE TO THE DEGREE GRID
+        # STEP 3: RESAMPLE TO THE DEGREE GRID
         # ---------------------------------------------------------
         resampled_data = resample_nearest(
             swath_def, 
@@ -314,7 +371,7 @@ class Sentinel3SynergyDownloader(BaseDownloader):
         )
 
         # ---------------------------------------------------------
-        # STEP 5: SAVE GEOTIFF
+        # STEP 4: BUILD GRIDDED ARRAY
         # ---------------------------------------------------------
         # get_proj_coords() now returns 2D X/Y arrays in DEGREES
         target_lon, target_lat = area_def.get_proj_coords()
@@ -329,13 +386,4 @@ class Sentinel3SynergyDownloader(BaseDownloader):
         )
         
         # Write the standard EPSG:4326 CRS
-        da_gridded.rio.write_crs("EPSG:4326", inplace=True)
-        
-        da_gridded.rio.to_raster(
-            output_path,
-            driver="COG",
-            compress="DEFLATE",
-            tiled=True
-        )
-        
         return da_gridded

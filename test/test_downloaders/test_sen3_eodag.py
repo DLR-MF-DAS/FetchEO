@@ -1,10 +1,12 @@
 import os
 import pytest
 import datetime
+import numpy as np
+import rasterio
+import xarray as xr
 from pathlib import Path
 from unittest.mock import patch
 
-from fetcheo.downloaders._downloader import ItemDownloadReport
 from fetcheo.downloaders.sen3_eodag import Sentinel3SynergyDownloader
 
 
@@ -28,62 +30,80 @@ TEST_POLYGON = {
 
 
 @patch("fetcheo.downloaders.sen3_eodag.EODataAccessGateway")
-def test_sen3_eodag_core(mock_eodag, tmp_path, monkeypatch):
-    """Test Sentinel3SynergyDownloader: fetch (mocked), report handling."""
-    # Set dummy credentials in environment for this test only
+def test_sen3_eodag_fetch_mosaics_tiles_for_same_acquisition(mock_eodag, tmp_path, monkeypatch):
+    """`fetch` should mosaic multiple tiles for the same acquisition into one output."""
     monkeypatch.setenv("CDSE_USERNAME", "dummy_user")
     monkeypatch.setenv("CDSE_PASSWORD", "dummy_pass")
-    # Simulate two bands, expect two reports
-    dummy_reports = [
-        ItemDownloadReport(
-            data_source="Sentinel3Water-openeo",
-            variable_name="B01",
-            acquisition_time=datetime.datetime(2021, 1, 1),
-            polygon=TEST_POLYGON,
-            bbox=[-124.0, 32.0, -123.0, 33.0],
-            path=tmp_path / "S3_WATER_20210101T000000_B01.tif",
-            download_successful=True,
-            error=None,
-            metadata=None,
-        ),
-        ItemDownloadReport(
-            data_source="Sentinel3Water-openeo",
-            variable_name="B02",
-            acquisition_time=datetime.datetime(2021, 1, 1),
-            polygon=TEST_POLYGON,
-            bbox=[-124.0, 32.0, -123.0, 33.0],
-            path=tmp_path / "S3_WATER_20210101T000000_B02.tif",
-            download_successful=True,
-            error=None,
-            metadata=None,
-        ),
-    ]
-    with patch("fetcheo.downloaders.sen3_eodag.Sentinel3SynergyDownloader.fetch") as mock_fetch:
-        mock_fetch.return_value = dummy_reports
-        downloader = Sentinel3SynergyDownloader(
-            variables_to_files_map={
-                "Oa01_reflectance": "Oa01_reflectance",
-                "Oa02_reflectance": "Oa02_reflectance",
-            }
+
+    acquisition_time = "2021-01-01T00:00:00Z"
+    tile_dirs = [tmp_path / "tile_a", tmp_path / "tile_b"]
+    for tile_dir in tile_dirs:
+        tile_dir.mkdir()
+
+    class FakeItem:
+        def __init__(self, tile_id):
+            self.properties = {"datetime": acquisition_time, "id": tile_id}
+
+    fake_items = [FakeItem("tile-a"), FakeItem("tile-b")]
+    mock_gateway = mock_eodag.return_value
+    mock_gateway.search.return_value = fake_items
+    mock_gateway.download.side_effect = [str(tile_dirs[0]), str(tile_dirs[1])]
+
+    downloader = Sentinel3SynergyDownloader(
+        variables_to_files_map={"Oa01_reflectance": "Oa01_reflectance"}
+    )
+
+    def make_tile(x_start, value):
+        data = xr.DataArray(
+            np.full((2, 2), value, dtype=float),
+            dims=["y", "x"],
+            coords={
+                "x": [x_start, x_start + 0.01],
+                "y": [33.0, 32.99],
+            },
+            name="Oa01_reflectance",
         )
-        reports = downloader.fetch(
-            polygon=TEST_POLYGON,
-            time_frame=(TEST_START_DATE, TEST_END_DATE),
-            output_dir=tmp_path,
-            cache_dir=tmp_path,
-        )
-        mock_fetch.assert_called_once_with(
-            polygon=TEST_POLYGON,
-            time_frame=(TEST_START_DATE, TEST_END_DATE),
-            output_dir=tmp_path,
-            cache_dir=tmp_path,
-        )
-        assert isinstance(reports, list)
-        assert len(reports) == 2
-        assert all(isinstance(item, ItemDownloadReport) for item in reports)
-        assert all(item.download_successful for item in reports)
-        assert {r.variable_name for r in reports} == {"B01", "B02"}
-        assert downloader.frequency == "daily"
+        data.rio.set_spatial_dims(x_dim="x", y_dim="y", inplace=True)
+        data.rio.write_crs("EPSG:4326", inplace=True)
+        return data
+
+    def fake_clip(da, sen3_dir, polygon):
+        if sen3_dir.name == "tile_a":
+            return make_tile(-124.00, 1.0)
+        return make_tile(-123.98, 2.0)
+
+    monkeypatch.setattr(
+        downloader,
+        "_load_netcdf_as_array",
+        lambda cache_dir, sen3_dir, nc_filename, variable_name: xr.DataArray([1.0]),
+    )
+    monkeypatch.setattr(downloader, "_clip_array_to_grid", fake_clip)
+
+    reports = downloader.fetch(
+        polygon=TEST_POLYGON,
+        time_frame=(TEST_START_DATE, TEST_END_DATE),
+        output_dir=tmp_path,
+        cache_dir=tmp_path,
+        show_progress=False,
+    )
+
+    assert downloader.frequency == "daily"
+    assert len(reports) == 1
+
+    report = reports[0]
+    assert report.download_successful is True
+    assert report.variable_name == "Oa01_reflectance"
+    assert report.path.name == "S3_20210101_000000_Oa01_reflectance.tif"
+    assert report.path.exists()
+    assert report.metadata is not None
+    assert len(report.metadata["source_products"]) == 2
+
+    with rasterio.open(report.path) as dataset:
+        data = dataset.read(1)
+        assert dataset.width == 4
+        assert dataset.height == 2
+        assert 1.0 in data
+        assert 2.0 in data
 
 
 def test_sen3_eodag_integration(tmp_path):
