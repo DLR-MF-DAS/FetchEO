@@ -162,10 +162,11 @@ class Sentinel3SynergyDownloader(BaseDownloader):
             lats = geo_ds['latitude'].values
 
         # 1. Trim Edges (15%) to remove atmospheric bowtie distortion
-        trim = int(lons.shape[1] * 0.15) 
-        lons = lons[:, trim:-trim]
-        lats = lats[:, trim:-trim]
-        da = da.isel({da.dims[1]: slice(trim, -trim)})
+        trim = int(lons.shape[1] * 0.15)
+        if trim > 0:
+            lons = lons[:, trim:-trim]
+            lats = lats[:, trim:-trim]
+            da = da.isel({da.dims[1]: slice(trim, -trim)})
 
         # 2. Check Valid Pixels (Are we actually inside the box?)
         valid = (lats >= bbox[1]) & (lats <= bbox[3]) & (lons >= bbox[0]) & (lons <= bbox[2])
