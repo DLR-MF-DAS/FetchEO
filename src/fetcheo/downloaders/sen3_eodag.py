@@ -105,7 +105,8 @@ class Sentinel3SynergyDownloader(BaseDownloader):
                 continue
 
             for var_name, nc_filename in self.variables_to_files_map.items():
-                final_basename = f"S3_{exact_time_str}_{var_name}"
+                product_id = item.properties.get("id", "unknown")
+                final_basename = f"S3_{exact_time_str}_{product_id}_{var_name}"
                 final_tif_path = output_dir / f"{final_basename}.tif"
                 
                 # Skip if this specific swath variable is already processed
@@ -160,10 +161,11 @@ class Sentinel3SynergyDownloader(BaseDownloader):
             lats = geo_ds['latitude'].values
 
         # 1. Trim Edges (15%) to remove atmospheric bowtie distortion
-        trim = int(lons.shape[1] * 0.15) 
-        lons = lons[:, trim:-trim]
-        lats = lats[:, trim:-trim]
-        da = da.isel({da.dims[1]: slice(trim, -trim)})
+        trim = int(lons.shape[1] * 0.15)
+        if trim > 0:
+            lons = lons[:, trim:-trim]
+            lats = lats[:, trim:-trim]
+            da = da.isel({da.dims[1]: slice(trim, -trim)})
 
         # 2. Check Valid Pixels (Are we actually inside the box?)
         valid = (lats >= bbox[1]) & (lats <= bbox[3]) & (lons >= bbox[0]) & (lons <= bbox[2])
