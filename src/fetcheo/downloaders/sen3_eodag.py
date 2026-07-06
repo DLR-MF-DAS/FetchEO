@@ -3,7 +3,6 @@ import datetime
 from tqdm import tqdm
 from pathlib import Path
 from typing import Optional
-from collections import defaultdict
 
 import rioxarray
 import numpy as np
@@ -11,7 +10,6 @@ import xarray as xr
 from eodag import EODataAccessGateway
 from pyresample.kd_tree import resample_nearest
 from pyresample.geometry import SwathDefinition, create_area_def
-from rioxarray.merge import merge_arrays
 
 from fetcheo.downloaders._downloader import BaseDownloader, ItemDownloadReport
 
