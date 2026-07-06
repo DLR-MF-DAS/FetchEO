@@ -107,7 +107,8 @@ class Sentinel3SynergyDownloader(BaseDownloader):
                 continue
 
             for var_name, nc_filename in self.variables_to_files_map.items():
-                final_basename = f"S3_{exact_time_str}_{var_name}"
+                product_id = item.properties.get("id", "unknown")
+                final_basename = f"S3_{exact_time_str}_{product_id}_{var_name}"
                 final_tif_path = output_dir / f"{final_basename}.tif"
                 
                 # Skip if this specific swath variable is already processed
