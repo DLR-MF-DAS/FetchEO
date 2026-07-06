@@ -95,17 +95,25 @@ class Sentinel3SynergyDownloader(BaseDownloader):
             
             acq_time = datetime.datetime.fromisoformat(acq_time_raw.replace("Z", "+00:00"))
             exact_time_str = acq_time.strftime('%Y%m%d_%H%M%S')
+            product_id = item.properties.get("id", "unknown")
 
             try:
                 # EODAG handles caching automatically if the file is already downloaded
                 product_path = self.dag.download(item, extract=True)
                 sen3_dir = Path(product_path)
             except Exception as e:
-                print(f"Download failed for swath at {exact_time_str}: {e}")
+                reports.append(
+                    self._create_error_report(
+                        acq_time,
+                        polygon,
+                        bbox,
+                        output_dir,
+                        f"Download failed for swath {product_id} at {exact_time_str}: {e}",
+                    )
+                )
                 continue
 
             for var_name, nc_filename in self.variables_to_files_map.items():
-                product_id = item.properties.get("id", "unknown")
                 final_basename = f"S3_{exact_time_str}_{product_id}_{var_name}"
                 final_tif_path = output_dir / f"{final_basename}.tif"
                 
