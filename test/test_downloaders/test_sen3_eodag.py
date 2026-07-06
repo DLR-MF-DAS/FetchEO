@@ -1,10 +1,12 @@
 import os
 import pytest
 import datetime
+import numpy as np
+import rasterio
+import xarray as xr
 from pathlib import Path
 from unittest.mock import patch
 
-from fetcheo.downloaders._downloader import ItemDownloadReport
 from fetcheo.downloaders.sen3_eodag import Sentinel3SynergyDownloader
 
 
@@ -28,62 +30,84 @@ TEST_POLYGON = {
 
 
 @patch("fetcheo.downloaders.sen3_eodag.EODataAccessGateway")
-def test_sen3_eodag_core(mock_eodag, tmp_path, monkeypatch):
-    """Test Sentinel3SynergyDownloader: fetch (mocked), report handling."""
-    # Set dummy credentials in environment for this test only
+def test_sen3_eodag_fetch_skips_duplicate_output_for_same_acquisition(mock_eodag, tmp_path, monkeypatch):
+    """`fetch` should emit one raster per same-time swath using the source product id."""
     monkeypatch.setenv("CDSE_USERNAME", "dummy_user")
     monkeypatch.setenv("CDSE_PASSWORD", "dummy_pass")
-    # Simulate two bands, expect two reports
-    dummy_reports = [
-        ItemDownloadReport(
-            data_source="Sentinel3Water-openeo",
-            variable_name="B01",
-            acquisition_time=datetime.datetime(2021, 1, 1),
-            polygon=TEST_POLYGON,
-            bbox=[-124.0, 32.0, -123.0, 33.0],
-            path=tmp_path / "S3_WATER_20210101T000000_B01.tif",
-            download_successful=True,
-            error=None,
-            metadata=None,
-        ),
-        ItemDownloadReport(
-            data_source="Sentinel3Water-openeo",
-            variable_name="B02",
-            acquisition_time=datetime.datetime(2021, 1, 1),
-            polygon=TEST_POLYGON,
-            bbox=[-124.0, 32.0, -123.0, 33.0],
-            path=tmp_path / "S3_WATER_20210101T000000_B02.tif",
-            download_successful=True,
-            error=None,
-            metadata=None,
-        ),
-    ]
-    with patch("fetcheo.downloaders.sen3_eodag.Sentinel3SynergyDownloader.fetch") as mock_fetch:
-        mock_fetch.return_value = dummy_reports
-        downloader = Sentinel3SynergyDownloader(
-            variables_to_files_map={
-                "Oa01_reflectance": "Oa01_reflectance",
-                "Oa02_reflectance": "Oa02_reflectance",
-            }
+
+    acquisition_time = "2021-01-01T00:00:00Z"
+    tile_dirs = [tmp_path / "tile_a", tmp_path / "tile_b"]
+    for tile_dir in tile_dirs:
+        tile_dir.mkdir()
+
+    class FakeItem:
+        def __init__(self, tile_id):
+            self.properties = {"datetime": acquisition_time, "id": tile_id}
+
+    fake_items = [FakeItem("tile-a"), FakeItem("tile-b")]
+    mock_gateway = mock_eodag.return_value
+    mock_gateway.search.return_value = fake_items
+    mock_gateway.download.side_effect = [str(tile_dirs[0]), str(tile_dirs[1])]
+
+    downloader = Sentinel3SynergyDownloader(
+        variables_to_files_map={"Oa01_reflectance": "Oa01_reflectance"}
+    )
+
+    def fake_process_swath_to_grid(cache_dir, sen3_dir, nc_filename, var_name, bbox, area_def):
+        value = 1.0 if sen3_dir.name == "tile_a" else 2.0
+        data = xr.DataArray(
+            [np.full((2, 2), value, dtype=np.float32)],
+            dims=["band", "y", "x"],
+            coords={
+                "band": [1],
+                "x": [-124.0, -123.99],
+                "y": [33.0, 32.99],
+            },
+            name=var_name,
         )
-        reports = downloader.fetch(
-            polygon=TEST_POLYGON,
-            time_frame=(TEST_START_DATE, TEST_END_DATE),
-            output_dir=tmp_path,
-            cache_dir=tmp_path,
-        )
-        mock_fetch.assert_called_once_with(
-            polygon=TEST_POLYGON,
-            time_frame=(TEST_START_DATE, TEST_END_DATE),
-            output_dir=tmp_path,
-            cache_dir=tmp_path,
-        )
-        assert isinstance(reports, list)
-        assert len(reports) == 2
-        assert all(isinstance(item, ItemDownloadReport) for item in reports)
-        assert all(item.download_successful for item in reports)
-        assert {r.variable_name for r in reports} == {"B01", "B02"}
-        assert downloader.frequency == "daily"
+        data.rio.write_crs("EPSG:4326", inplace=True)
+        return data
+
+    monkeypatch.setattr(downloader, "_process_swath_to_grid", fake_process_swath_to_grid)
+
+    reports = downloader.fetch(
+        polygon=TEST_POLYGON,
+        time_frame=(TEST_START_DATE, TEST_END_DATE),
+        output_dir=tmp_path,
+        cache_dir=tmp_path,
+        show_progress=False,
+    )
+
+    assert downloader.frequency == "daily"
+    assert len(reports) == 2
+    assert mock_gateway.download.call_count == 2
+
+    first_report, second_report = reports
+    assert first_report.download_successful is True
+    assert second_report.download_successful is True
+    assert first_report.variable_name == "Oa01_reflectance"
+    assert second_report.variable_name == "Oa01_reflectance"
+    assert first_report.path != second_report.path
+    assert first_report.path.name == "S3_20210101_000000_tile-a_Oa01_reflectance.tif"
+    assert second_report.path.name == "S3_20210101_000000_tile-b_Oa01_reflectance.tif"
+    assert first_report.path.exists()
+    assert second_report.path.exists()
+    assert first_report.metadata == {"note": "Exact timestamp preserved"}
+    assert second_report.metadata == {"note": "Exact timestamp preserved"}
+
+    with rasterio.open(first_report.path) as dataset:
+        data = dataset.read(1)
+        assert dataset.count == 1
+        assert dataset.width == 2
+        assert dataset.height == 2
+        assert 1.0 in data
+
+    with rasterio.open(second_report.path) as dataset:
+        data = dataset.read(1)
+        assert dataset.count == 1
+        assert dataset.width == 2
+        assert dataset.height == 2
+        assert 2.0 in data
 
 
 def test_sen3_eodag_integration(tmp_path):
@@ -112,4 +136,42 @@ def test_sen3_eodag_integration(tmp_path):
         assert Path(item.path).exists(), f"GeoTIFF not found: {item.path}"
     # Clean up
     for f in tmp_path.iterdir():
-        f.unlink()
+        if f.is_file():
+            f.unlink()
+
+
+@patch("fetcheo.downloaders.sen3_eodag.EODataAccessGateway")
+def test_sen3_eodag_fetch_reports_failed_swath_download(mock_eodag, tmp_path, monkeypatch):
+    """`fetch` should return an error report when a swath download fails."""
+    monkeypatch.setenv("CDSE_USERNAME", "dummy_user")
+    monkeypatch.setenv("CDSE_PASSWORD", "dummy_pass")
+
+    class FakeItem:
+        properties = {
+            "datetime": "2021-01-01T12:34:56Z",
+            "id": "tile-a",
+        }
+
+    mock_gateway = mock_eodag.return_value
+    mock_gateway.search.return_value = [FakeItem()]
+    mock_gateway.download.side_effect = RuntimeError("service unavailable")
+
+    downloader = Sentinel3SynergyDownloader(
+        variables_to_files_map={"Oa01_reflectance": "Oa01_reflectance"}
+    )
+
+    reports = downloader.fetch(
+        polygon=TEST_POLYGON,
+        time_frame=(TEST_START_DATE, TEST_END_DATE),
+        output_dir=tmp_path,
+        cache_dir=tmp_path,
+        show_progress=False,
+    )
+
+    assert len(reports) == 1
+    report = reports[0]
+    assert report.download_successful is False
+    assert report.variable_name == "Synergy_Product"
+    assert report.acquisition_time == datetime.datetime(2021, 1, 1, 12, 34, 56, tzinfo=datetime.timezone.utc)
+    assert report.path == tmp_path
+    assert report.error == "Download failed for swath tile-a at 20210101_123456: service unavailable"

@@ -48,11 +48,9 @@ class Sentinel3SynergyDownloader(BaseDownloader):
         self.dag = EODataAccessGateway()
         self.dag.set_preferred_provider("cop_dataspace")
 
-
     @property
     def frequency(self) -> str:
         return "daily"
-
 
     def fetch(self,
               polygon: dict,
@@ -61,20 +59,21 @@ class Sentinel3SynergyDownloader(BaseDownloader):
               cache_dir: Optional[Path] = None,
               show_progress: bool = True,
               ) -> list[ItemDownloadReport]:
-
-        # Normalize path inputs and make output/cache directories
+        """
+        Fetches Sentinel-3 swaths and maps them to a unified regional grid.
+        Every swath is saved independently with its exact timestamp to preserve temporal integrity.
+        """
         output_dir = Path(output_dir)
-        if cache_dir is None:
-            cache_dir = output_dir / "cache"
-        else:
-            cache_dir = Path(cache_dir)
-
+        cache_dir = Path(cache_dir) if cache_dir else output_dir / "cache"
         output_dir.mkdir(parents=True, exist_ok=True)
         cache_dir.mkdir(parents=True, exist_ok=True)
+
         os.environ["EODAG__COP_DATASPACE__DOWNLOAD__OUTPUT_DIR"] = str(cache_dir)
         bbox = self._extract_bbox(polygon)
 
-        # The CDSE STAC backend requires the 'collection' key
+        # 1. CREATE MASTER GRID FOR THE REGION (The "Empty Canvas")
+        area_def = self._create_master_grid(bbox, resolution=0.01)
+
         search_criteria = {
             "collection": "S3_OLCI_L2WRR",
             "start": time_frame[0].strftime("%Y-%m-%dT%H:%M:%S"),
@@ -82,114 +81,191 @@ class Sentinel3SynergyDownloader(BaseDownloader):
             "geom": {"lonmin": bbox[0], "latmin": bbox[1], "lonmax": bbox[2], "latmax": bbox[3]}
         }
 
-        # Search catalog for Sentinel-3 water images
         reports = []
         try:
             search_results = self.dag.search(**search_criteria)
         except Exception as e:
-            return [
-                ItemDownloadReport(
-                    data_source="Sentinel-3",
-                    variable_name="Synergy_Product",
-                    acquisition_time=time_frame[0],
-                    polygon=polygon,
-                    bbox=bbox,
-                    path=output_dir,
-                    download_successful=False,
-                    error=f"Search failed: {str(e)}"
-                )
-            ]
+            return [self._create_error_report(time_frame[0], polygon, bbox, output_dir, f"Search failed: {e}")]
 
-        # Loop through all images and download them
-        for item in tqdm(search_results, desc="Downloading Sentinel-3 images", disable=not show_progress):
+        # 2. PROCESS EVERY SWATH INDEPENDENTLY 
+        for item in tqdm(search_results, desc="Processing swaths", disable=not show_progress):
             acq_time_raw = item.properties.get("datetime")
             if not acq_time_raw:
-                raise ValueError("Missing 'datetime' in product properties")
+                continue
+            
             acq_time = datetime.datetime.fromisoformat(acq_time_raw.replace("Z", "+00:00"))
+            exact_time_str = acq_time.strftime('%Y%m%d_%H%M%S')
+            product_id = item.properties.get("id", "unknown")
 
-            # Download current image file
             try:
-                # EODAG downloads and extracts, returning the path to the extracted product directory.
-                product_dir_path = self.dag.download(item, extract=True)
-                if not product_dir_path:
-                    raise RuntimeError("EODAG download returned an empty path after extraction.")
-
-                # Get the directory to the downloaded sen3 data
-                sen3_dir = Path(product_dir_path)
-                if not sen3_dir.exists() or not sen3_dir.is_dir():
-                    raise FileNotFoundError(f"Expected extracted directory {sen3_dir} does not exist or is not a directory.")
-
-                # Process every requested variable
-                for variable_name, nc_filename in self.variables_to_files_map.items():
-                    basename = f"S3_{acq_time.strftime('%Y%m%d_%H%M%S')}_{variable_name}"
-                    expected_tif = self._get_filepaths(output_dir, basename)[0]
-
-                    # Load netcdf using xarray
-                    try:
-                        da = self._load_netcdf_as_array(cache_dir=cache_dir,
-                                                        sen3_dir=sen3_dir,
-                                                        nc_filename=nc_filename,
-                                                        variable_name=variable_name)
-
-                        da_coords = self._load_netcdf_as_array(cache_dir=cache_dir,
-                                                        sen3_dir=sen3_dir,
-                                                        nc_filename=nc_filename,
-                                                        variable_name=variable_name)
-
-                        # Clip data array to region and save as geotiff
-                        self._clip_and_save_array_as_cog(da=da,
-                                                         sen3_dir=sen3_dir,
-                                                         polygon=polygon,
-                                                         output_path=output_dir / f"{basename}.tif")
-
-                        # Validate the file is loadable
-                        success = self._validate_geotiff(output_dir, basename).get(expected_tif, False)
-                        reports.append(
-                            ItemDownloadReport(
-                                data_source="Sentinel-3",
-                                variable_name=variable_name,
-                                acquisition_time=acq_time,
-                                polygon=polygon,
-                                bbox=bbox,
-                                path=expected_tif,
-                                download_successful=success,
-                                error=None if success else "GeoTIFF validation failed.",
-                                metadata=item.properties
-                            )
-                        )
-
-                    except Exception as e:
-                      reports.append(
-                            ItemDownloadReport(
-                                data_source="Sentinel-3",
-                                variable_name=variable_name,
-                                acquisition_time=acq_time,
-                                polygon=polygon,
-                                bbox=bbox,
-                                path=expected_tif,
-                                download_successful=False,
-                                error=str(e),
-                                metadata=item.properties
-                            )
-                        )
-
+                # EODAG handles caching automatically if the file is already downloaded
+                product_path = self.dag.download(item, extract=True)
+                sen3_dir = Path(product_path)
             except Exception as e:
-                for variable_name, _ in self.variables_to_files_map.items():
-                    reports.append(
-                        ItemDownloadReport(
-                            data_source="Sentinel-3",
-                            variable_name=variable_name,
-                            acquisition_time=acq_time,
-                            polygon=polygon,
-                            bbox=bbox,
-                            path=output_dir,
-                            download_successful=False,
-                            error=str(e)
-                        )
+                reports.append(
+                    self._create_error_report(
+                        acq_time,
+                        polygon,
+                        bbox,
+                        output_dir,
+                        f"Download failed for swath {product_id} at {exact_time_str}: {e}",
                     )
+                )
+                continue
+
+            for var_name, nc_filename in self.variables_to_files_map.items():
+                final_basename = f"S3_{exact_time_str}_{product_id}_{var_name}"
+                final_tif_path = output_dir / f"{final_basename}.tif"
+                
+                # Skip if this specific swath variable is already processed
+                if final_tif_path.exists():
+                    reports.append(self._create_success_report(var_name, acq_time, polygon, bbox, final_tif_path, "Already exists"))
+                    continue
+
+                try:
+                    # Load, trim, and place on the Master Grid
+                    da_gridded = self._process_swath_to_grid(cache_dir, sen3_dir, nc_filename, var_name, bbox, area_def)
+                    
+                    if da_gridded is not None:
+                        # Since WQSF is now a float mask, we can safely write to GeoTIFF without corruption
+                        da_gridded.rio.to_raster(final_tif_path, driver="COG", compress="DEFLATE", tiled=True)
+                        reports.append(self._create_success_report(var_name, acq_time, polygon, bbox, final_tif_path, "Exact timestamp preserved"))
+                        
+                        # Clean up RAM immediately
+                        del da_gridded
+                    else:
+                        pass # Swath was entirely outside the bounding box
+
+                except Exception as e:
+                    reports.append(self._create_error_report(acq_time, polygon, bbox, output_dir, f"Processing failed: {e}", var_name))
 
         return reports
 
+    # ---------------------------------------------------------
+    # HELPER METHODS
+    # ---------------------------------------------------------
+    def _create_master_grid(self, bbox, resolution):
+        """Defines the static EPSG:4326 grid for the entire region."""
+        proj_dict = {"proj": "longlat", "datum": "WGS84"}
+        return create_area_def(
+            area_id="epsg4326_grid",
+            projection=proj_dict,
+            area_extent=[bbox[0], bbox[1], bbox[2], bbox[3]], 
+            resolution=resolution  
+        )
+
+    def _process_swath_to_grid(self, cache_dir, sen3_dir, nc_filename, var_name, bbox, area_def):
+        """Loads a single swath, trims distorted edges, and projects it onto the master grid."""
+        nc_path = cache_dir / sen3_dir / f"{nc_filename}.nc"
+        geo_file = cache_dir / sen3_dir / "geo_coordinates.nc"
+        
+        if not nc_path.exists() or not geo_file.exists():
+            raise FileNotFoundError(f"Missing NetCDF or Geo file in {sen3_dir.name}")
+
+        # Load data and coordinates
+        with xr.open_dataset(nc_path) as ds, xr.open_dataset(geo_file) as geo_ds:
+            da = ds[var_name].load() 
+            lons = geo_ds['longitude'].values
+            lats = geo_ds['latitude'].values
+
+        # 1. Trim Edges (15%) to remove atmospheric bowtie distortion
+        trim = int(lons.shape[1] * 0.15)
+        if trim > 0:
+            lons = lons[:, trim:-trim]
+            lats = lats[:, trim:-trim]
+            da = da.isel({da.dims[1]: slice(trim, -trim)})
+
+        # 2. Check Valid Pixels (Are we actually inside the box?)
+        valid = (lats >= bbox[1]) & (lats <= bbox[3]) & (lons >= bbox[0]) & (lons <= bbox[2])
+        if not valid.any():
+            return None 
+
+        # ---------------------------------------------------------
+        # 3. DIRECT MASKING: Filter Good Pixels using provided WQSF bits
+        # ---------------------------------------------------------
+        if var_name == "WQSF":
+            wqsf_vals = da.values.astype(np.uint64)
+            
+            # Derived explicitly from the provided NetCDF flag_masks and flag_meanings
+            WATER_MASK = 2  
+            
+            BAD_MASK = (
+                1 |         # INVALID
+                4 |         # LAND
+                8 |         # CLOUD
+                8388608 |   # CLOUD_AMBIGUOUS
+                16777216 |  # CLOUD_MARGIN
+                16 |        # SNOW_ICE
+                32 |        # INLAND_WATER
+                64 |        # COASTLINE
+                128 |       # TIDAL
+                512 |       # SUSPECT
+                1024 |      # HISOLZEN
+                2048 |      # SATURATED
+                8192 |      # HIGHGLINT
+                65536 |     # WV_FAIL
+                131072 |    # PAR_FAIL
+                262144 |    # AC_FAIL
+                524288 |    # OC4ME_FAIL
+                1048576 |   # OCNN_FAIL
+                2097152     # KDM_FAIL
+            )
+            
+            # Determine good pixels: Must be water, must NOT have bad flags
+            is_water = (wqsf_vals & WATER_MASK) > 0
+            is_bad = (wqsf_vals & BAD_MASK) > 0
+            is_clean = is_water & ~is_bad
+            
+            # Convert to float32: 1.0 is a good pixel, 0.0 is a bad pixel
+            da_processed = np.where(is_clean, 1.0, 0.0).astype(np.float32)
+            fill_val = 0.0
+        else:
+            da_processed = da.values.astype(np.float32)
+            fill_val = np.nan
+
+        # 4. Resample onto the Master Canvas
+        swath_def = SwathDefinition(lons=lons, lats=lats)
+        resampled_data = resample_nearest(
+            swath_def, 
+            da_processed, 
+            area_def, 
+            radius_of_influence=4000, 
+            fill_value=fill_val
+        )
+
+        # 5. Construct valid 3D DataArray
+        target_lon, target_lat = area_def.get_proj_coords()
+        da_gridded = xr.DataArray(
+            [resampled_data], 
+            dims=["band", "y", "x"],
+            coords={"band": [1], "x": target_lon[0, :], "y": target_lat[:, 0]}
+        )
+        
+        da_gridded.rio.write_crs("EPSG:4326", inplace=True)
+        da_gridded.rio.write_nodata(fill_val, inplace=True)
+        
+        return da_gridded
+
+    def _create_success_report(self, var_name, time, poly, bbox, path, note):
+        return ItemDownloadReport(data_source="Sentinel-3", 
+                                  variable_name=var_name, 
+                                  acquisition_time=time, 
+                                  polygon=poly, 
+                                  bbox=bbox, 
+                                  path=path, 
+                                  download_successful=True, 
+                                  error=None, 
+                                  metadata={"note": note})
+
+    def _create_error_report(self, time, poly, bbox, path, error, var_name="Synergy_Product"):
+        return ItemDownloadReport(data_source="Sentinel-3", 
+                                  variable_name=var_name, 
+                                  acquisition_time=time, 
+                                  polygon=poly, 
+                                  bbox=bbox, 
+                                  path=path, 
+                                  download_successful=False, 
+                                  error=error)
 
     def _get_all_variables_to_files_map(self):
         return {
@@ -220,7 +296,6 @@ class Sentinel3SynergyDownloader(BaseDownloader):
           "WQSF": "wqsf"
           }
 
-
     def _load_netcdf_as_array(self, cache_dir, sen3_dir, nc_filename, variable_name) -> None:
         # Check that file exists
         nc_path = cache_dir/ sen3_dir / f"{nc_filename}.nc"
@@ -228,114 +303,12 @@ class Sentinel3SynergyDownloader(BaseDownloader):
             raise FileNotFoundError(f"Missing {nc_filename} in {sen3_dir.name}")
 
         # Load netcdf file and return as data array
-        array = xr.open_dataset(nc_path)
-        return array[variable_name]
+        with xr.open_dataset(nc_path) as array:
+            return array[variable_name].load()
 
-
-    def _clip_and_save_array_as_cog(self, da, sen3_dir, polygon, output_path):
-        """
-        Pipeline for degree-based mapping (EPSG:4326): 
-        1. Trims distorted swath edges.
-        2. Crops to bounding box to save RAM.
-        3. Resamples to a rigid 0.01 degree latitude/longitude grid.
-        """
-        # 1. Extract geographic bounding box (Degrees)
-        min_lon, min_lat, max_lon, max_lat = self._extract_bbox(polygon)
-
-        # 2. Load the 2D Geolocation arrays
-        geo_file = sen3_dir / "geo_coordinates.nc"
-        if not geo_file.exists():
-            raise FileNotFoundError(f"Missing geolocation file: {geo_file}")
-            
-        with xr.open_dataset(geo_file) as geo_ds:
-            lons = geo_ds['longitude'].values
-            lats = geo_ds['latitude'].values
-
-        # ---------------------------------------------------------
-        # STEP 1: TRIM THE SWATH EDGES (Quality Control)
-        # ---------------------------------------------------------
-        # Drop the outer 15% on both sides to remove atmospheric distortion
-        total_cols = lons.shape[1]
-        trim_amount = int(total_cols * 0.15) 
-
-        lons = lons[:, trim_amount:-trim_amount]
-        lats = lats[:, trim_amount:-trim_amount]
-        
-        dim_y, dim_x = da.dims[0], da.dims[1]
-        da_trimmed = da.isel({dim_x: slice(trim_amount, -trim_amount)})
-
-        # ---------------------------------------------------------
-        # STEP 2: ROUGH CROP BY LAT/LON (Save Memory)
-        # ---------------------------------------------------------
-        valid_pixels = (lats >= min_lat) & (lats <= max_lat) & (lons >= min_lon) & (lons <= max_lon)
-        
-        if not valid_pixels.any():
-            raise ValueError(f"No data found in bounds after edge trimming. Variable: {da.name}")
-
-        valid_rows = np.any(valid_pixels, axis=1)
-        valid_cols = np.any(valid_pixels, axis=0)
-        
-        rmin, rmax = np.where(valid_rows)[0][[0, -1]]
-        cmin, cmax = np.where(valid_cols)[0][[0, -1]]
-
-        # Add a 10-pixel buffer
-        rmin, rmax = max(0, rmin - 10), min(lats.shape[0], rmax + 10)
-        cmin, cmax = max(0, cmin - 10), min(lats.shape[1], cmax + 10)
-
-        lats_cropped = lats[rmin:rmax, cmin:cmax]
-        lons_cropped = lons[rmin:rmax, cmin:cmax]
-        da_cropped = da_trimmed.isel({dim_y: slice(rmin, rmax), dim_x: slice(cmin, cmax)})
-
-        # ---------------------------------------------------------
-        # STEP 3: DEFINE THE EPSG:4326 GRID
-        # ---------------------------------------------------------
-        proj_dict = {"proj": "longlat", "datum": "WGS84"}
-
-        swath_def = SwathDefinition(lons=lons_cropped, lats=lats_cropped)
-
-        # Change resolution to match your framework's degree requirements
-        # 0.01 degrees ~= 1.1km. (Change to 0.05 if matching MODIS exactly)
-        area_def = create_area_def(
-            area_id="epsg4326_grid",
-            projection=proj_dict,
-            area_extent=[min_lon, min_lat, max_lon, max_lat],
-            resolution=0.01  
-        )
-
-        # ---------------------------------------------------------
-        # STEP 4: RESAMPLE TO THE DEGREE GRID
-        # ---------------------------------------------------------
-        resampled_data = resample_nearest(
-            swath_def, 
-            da_cropped.values, 
-            area_def, 
-            radius_of_influence=4000, # Max search distance in meters (still required in meters)
-            fill_value=np.nan
-        )
-
-        # ---------------------------------------------------------
-        # STEP 5: SAVE GEOTIFF
-        # ---------------------------------------------------------
-        # get_proj_coords() now returns 2D X/Y arrays in DEGREES
-        target_lon, target_lat = area_def.get_proj_coords()
-        
-        da_gridded = xr.DataArray(
-            resampled_data,
-            dims=["y", "x"],
-            coords={
-                "x": target_lon[0, :],  # 1D Longitudes
-                "y": target_lat[:, 0]   # 1D Latitudes
-            }
-        )
-        
-        # Write the standard EPSG:4326 CRS
-        da_gridded.rio.write_crs("EPSG:4326", inplace=True)
-        
-        da_gridded.rio.to_raster(
-            output_path,
-            driver="COG",
-            compress="DEFLATE",
-            tiled=True
-        )
-        
-        return da_gridded
+    def _build_group_metadata(self, metadata_items: list[dict]) -> Optional[dict]:
+        if not metadata_items:
+            return None
+        if len(metadata_items) == 1:
+            return metadata_items[0]
+        return {"source_products": metadata_items}
