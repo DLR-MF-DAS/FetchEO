@@ -1,6 +1,6 @@
 [project]
 name = "fetcheo"
-version = "0.0.4"
+version = "0.0.5"
 authors = [
   { name="Samuel Garske", email="samuel.garske@dlr.de" },
 ]
