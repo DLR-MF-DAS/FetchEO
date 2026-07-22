@@ -46,7 +46,7 @@ def test_sen3_eodag_fetch_skips_duplicate_output_for_same_acquisition(mock_eodag
 
     fake_items = [FakeItem("tile-a"), FakeItem("tile-b")]
     mock_gateway = mock_eodag.return_value
-    mock_gateway.search.return_value = fake_items
+    mock_gateway.search_all.return_value = fake_items
     mock_gateway.download.side_effect = [str(tile_dirs[0]), str(tile_dirs[1])]
 
     downloader = Sentinel3SynergyDownloader(
@@ -153,7 +153,7 @@ def test_sen3_eodag_fetch_reports_failed_swath_download(mock_eodag, tmp_path, mo
         }
 
     mock_gateway = mock_eodag.return_value
-    mock_gateway.search.return_value = [FakeItem()]
+    mock_gateway.search_all.return_value = [FakeItem()]
     mock_gateway.download.side_effect = RuntimeError("service unavailable")
 
     downloader = Sentinel3SynergyDownloader(
