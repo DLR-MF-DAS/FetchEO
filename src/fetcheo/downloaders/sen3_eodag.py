@@ -83,7 +83,7 @@ class Sentinel3SynergyDownloader(BaseDownloader):
 
         reports = []
         try:
-            search_results = self.dag.search(**search_criteria)
+            search_results = self.dag.search_all(**search_criteria)
         except Exception as e:
             return [self._create_error_report(time_frame[0], polygon, bbox, output_dir, f"Search failed: {e}")]
 
