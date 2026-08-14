@@ -38,6 +38,10 @@ dependencies = [
     "eodag",
 ]
 
+[project.optional-dependencies]
+# Copernicus Marine access, needed only by the cmems_sar_wind downloader.
+cmems = ["copernicusmarine"]
+
 [project.urls]
 Homepage = "https://github.com/DLR-MF-DAS/FetchEO"
 Issues = "https://github.com/DLR-MF-DAS/FetchEO/issues"

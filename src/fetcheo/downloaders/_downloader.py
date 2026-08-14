@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 
+import json
 import datetime
 from pathlib import Path
 from abc import ABC, abstractmethod
@@ -77,6 +78,47 @@ class BaseDownloader(ABC):
                     continue
         return is_valid_dict
     
+    def _validate_files(self, paths: List[Path]) -> dict:
+        """Validity of files of any type, for downloaders that do not emit GeoTIFFs.
+
+        ``_validate_geotiff`` only knows how to open rasters, but a downloader is
+        free to deliver NetCDF (satellite swaths, model output) or GeoJSON
+        (vector detections).  The check is dispatched on the file suffix and
+        stays deliberately shallow: it answers "did this download produce a file
+        a reader can open", not "is the science in it correct".
+
+        Args:
+            paths: Files to check.
+
+        Returns:
+            dict: Mapping of path to True/False (valid / corrupt / missing).
+        """
+        is_valid_dict = {}
+        for path in paths:
+            path = Path(path)
+            is_valid_dict[path] = False
+            if not path.exists() or path.stat().st_size == 0:
+                continue
+            suffix = path.suffix.lower()
+            try:
+                if suffix in (".tif", ".tiff"):
+                    with rasterio.open(path) as src:
+                        _ = src.read(1, window=((0, 1), (0, 1)))
+                elif suffix in (".nc", ".nc4", ".cdf", ".h5", ".hdf5"):
+                    import xarray as xr
+                    with xr.open_dataset(path, decode_times=False) as ds:
+                        _ = ds.sizes
+                elif suffix in (".json", ".geojson"):
+                    with open(path, "r", encoding="utf-8") as handle:
+                        json.load(handle)
+                else:
+                    # Unknown type: a non-empty file is as much as we can assert.
+                    pass
+                is_valid_dict[path] = True
+            except Exception:  # noqa: BLE001 - any reader failure means invalid
+                continue
+        return is_valid_dict
+
     def _extract_bbox(self, polygon: dict) -> list[float]:
         """Extracts [xmin, ymin, xmax, ymax] from a GeoJSON polygon."""
         lons = [pt[0] for pt in polygon["coordinates"][0]]

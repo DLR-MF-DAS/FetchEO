@@ -9,9 +9,12 @@ from fetcheo.loader import FetchEOLoader
 # Set up basic logging config for CLI
 logging.basicConfig(level=logging.INFO)
 
-# Map available downloaders (for validation/help)
-from fetcheo.loader import DOWNLOADER_DICT
-AVAILABLE_DOWNLOADERS = list(DOWNLOADER_DICT.keys())
+# Map available plugins (for validation/help).  Both lists include anything an
+# external package registered through a fetcheo.downloaders / fetcheo.processors
+# entry point, so `fetcheo --help` shows plugins FetchEO does not ship.
+from fetcheo.registry import available_downloaders, available_processors
+AVAILABLE_DOWNLOADERS = available_downloaders()
+AVAILABLE_PROCESSORS = available_processors()
 
 
 def validate_downloaders(downloaders):
@@ -21,6 +24,16 @@ def validate_downloaders(downloaders):
     if invalid:
         raise click.ClickException(f"Unrecognised downloaders: {invalid}. Should be from {AVAILABLE_DOWNLOADERS}.")
     return list(downloaders)
+
+
+def validate_processors(processors):
+    """Processors are opt-in: nothing runs unless it is asked for by name."""
+    if not processors:
+        return []
+    invalid = [p for p in processors if p not in AVAILABLE_PROCESSORS]
+    if invalid:
+        raise click.ClickException(f"Unrecognised processors: {invalid}. Should be from {AVAILABLE_PROCESSORS}.")
+    return list(processors)
 
 
 def parse_and_validate_inputs(
@@ -62,6 +75,7 @@ def parse_and_validate_inputs(
 
 @click.command()
 @click.option('--downloader', '-d', multiple=True, help=f"Downloader(s) to use. Available: {AVAILABLE_DOWNLOADERS}")
+@click.option('--processor', '-p', multiple=True, help=f"Processor(s) to run on the downloaded files (none by default). Available: {AVAILABLE_PROCESSORS}")
 @click.option('--geojson_path', required=True, help='Path to GeoJSON file')
 @click.option('--start-date', type=str, required=True, help='Start date (YYYY-MM-DD)')
 @click.option('--end-date', type=str, required=True, help='End date (YYYY-MM-DD)')
@@ -69,9 +83,10 @@ def parse_and_validate_inputs(
 @click.option('--output-dir', type=str, default='data', show_default=True, help='Output directory')
 @click.option('--show-progress/--no-show-progress', default=True, show_default=True, help='Show progress bar')
 @click.option('--db-path', type=str, default='fetcheo_data.duckdb', show_default=True, help='Path to DuckDB database file')
-def main(downloader, geojson_path, start_date, end_date, location_nickname, output_dir, show_progress, db_path):
+def main(downloader, processor, geojson_path, start_date, end_date, location_nickname, output_dir, show_progress, db_path):
     """Run FetchEOLoader from the command line."""
     #
+    processors = validate_processors(processor)
     start_dt, end_dt, downloaders, geojson_dict, polygon, location_nickname, cache_dir = parse_and_validate_inputs(
         geojson_path=geojson_path,
         location_nickname=location_nickname,
@@ -81,12 +96,15 @@ def main(downloader, geojson_path, start_date, end_date, location_nickname, outp
         output_folder=output_dir
     )
 
-    # Set up loader with enabled downloaders (default kwargs for now)
+    # Set up loader with enabled downloaders and processors (default kwargs for now)
     downloader_config = {name: True for name in downloaders}
+    processor_config = {name: True for name in processors}
     loader = FetchEOLoader(
         downloader_config=downloader_config,
         downloader_kwargs=None,
-        db_path=Path(db_path)
+        db_path=Path(db_path),
+        processor_config=processor_config,
+        processor_kwargs=None
     )
 
     # Place output in a subfolder under the location nickname
