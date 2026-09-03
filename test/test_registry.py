@@ -25,9 +25,8 @@ def test_builtin_downloaders_are_available():
     names = available_downloaders()
     for expected in ("era5", "modis_ndvi", "sen3_openeo", "sen3_eodag"):
         assert expected in names
-    # The DIVE data sources ship as ordinary downloaders.
+    # The DIVE data source ships as an ordinary downloader.
     assert "cmems_sar_wind" in names
-    assert "ifremer_raincell" in names
 
 
 def test_processor_registry_starts_empty_but_exists():

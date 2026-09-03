@@ -171,7 +171,6 @@ BUILTIN_DOWNLOADERS: Dict[str, PluginTarget] = {
     'sen3_openeo': 'fetcheo.downloaders.sen3_openeo.Sen3WaterOpenEODownloader',
     'sen3_eodag': 'fetcheo.downloaders.sen3_eodag.Sentinel3SynergyDownloader',
     'cmems_sar_wind': 'fetcheo.downloaders.cmems_sar_wind.CMEMSSARWindDownloader',
-    'ifremer_raincell': 'fetcheo.downloaders.ifremer_raincell.IfremerRainCellDownloader',
 }
 
 BUILTIN_PROCESSORS: Dict[str, PluginTarget] = {

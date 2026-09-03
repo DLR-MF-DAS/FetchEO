@@ -28,7 +28,6 @@ Some other notes:
 | `modis_ndvi` | MODIS NDVI | GeoTIFF |
 | `sen3_openeo` / `sen3_eodag` | Sentinel-3 water products | GeoTIFF |
 | `cmems_sar_wind` | Sentinel-1 L3 ocean wind (Copernicus Marine) | NetCDF |
-| `ifremer_raincell` | IFREMER ML rain-cell detections from Sentinel-1 GRD | GeoJSON |
 
 `cmems_sar_wind` needs an extra dependency: `pip install fetcheo[cmems]`, plus
 Copernicus Marine credentials (`copernicusmarine login`).
