@@ -97,6 +97,26 @@ class Sentinel3SynergyDownloader(BaseDownloader):
             exact_time_str = acq_time.strftime('%Y%m%d_%H%M%S')
             product_id = item.properties.get("id", "unknown")
 
+            # --- PRE-FLIGHT CHECK ---
+            # Figure out which variables actually need to be downloaded/processed
+            variables_to_process = {}
+            for var_name, nc_filename in self.variables_to_files_map.items():
+                final_basename = f"S3_{exact_time_str}_{product_id}_{var_name}"
+                final_tif_path = output_dir / f"{final_basename}.tif"
+                
+                if final_tif_path.exists():
+                    # Add to DB report immediately without downloading
+                    reports.append(self._create_success_report(
+                        var_name, acq_time, polygon, bbox, final_tif_path, "Already exists (Skipped Download)"
+                    ))
+                else:
+                    variables_to_process[var_name] = (nc_filename, final_tif_path)
+
+            # If all requested variables already exist, skip the download completely
+            if not variables_to_process:
+                continue
+            # ------------------------
+
             try:
                 # EODAG handles caching automatically if the file is already downloaded
                 product_path = self.dag.download(item, extract=True)
@@ -104,24 +124,14 @@ class Sentinel3SynergyDownloader(BaseDownloader):
             except Exception as e:
                 reports.append(
                     self._create_error_report(
-                        acq_time,
-                        polygon,
-                        bbox,
-                        output_dir,
-                        f"Download failed for swath {product_id} at {exact_time_str}: {e}",
+                        acq_time, polygon, bbox, output_dir,
+                        f"Download failed for swath {product_id} at {exact_time_str}: {e}"
                     )
                 )
                 continue
 
-            for var_name, nc_filename in self.variables_to_files_map.items():
-                final_basename = f"S3_{exact_time_str}_{product_id}_{var_name}"
-                final_tif_path = output_dir / f"{final_basename}.tif"
-                
-                # Skip if this specific swath variable is already processed
-                if final_tif_path.exists():
-                    reports.append(self._create_success_report(var_name, acq_time, polygon, bbox, final_tif_path, "Already exists"))
-                    continue
-
+            # Process ONLY the variables that were missing
+            for var_name, (nc_filename, final_tif_path) in variables_to_process.items():
                 try:
                     # Load, trim, and place on the Master Grid
                     da_gridded = self._process_swath_to_grid(cache_dir, sen3_dir, nc_filename, var_name, bbox, area_def)
@@ -138,7 +148,6 @@ class Sentinel3SynergyDownloader(BaseDownloader):
 
                 except Exception as e:
                     reports.append(self._create_error_report(acq_time, polygon, bbox, output_dir, f"Processing failed: {e}", var_name))
-
         return reports
 
     # ---------------------------------------------------------
