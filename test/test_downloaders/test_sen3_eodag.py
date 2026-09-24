@@ -6,6 +6,7 @@ import rasterio
 import xarray as xr
 from pathlib import Path
 from unittest.mock import patch
+from rasterio.transform import from_origin
 
 from fetcheo.downloaders.sen3_eodag import Sentinel3SynergyDownloader
 
@@ -125,7 +126,18 @@ def test_sen3_eodag_fetch_skips_existing_output_without_downloading(mock_eodag, 
         }
 
     existing_output = tmp_path / "S3_20210101_000000_tile-a_Oa01_reflectance.tif"
-    existing_output.touch()
+    with rasterio.open(
+        existing_output,
+        "w",
+        driver="GTiff",
+        width=1,
+        height=1,
+        count=1,
+        dtype="float32",
+        crs="EPSG:4326",
+        transform=from_origin(-124.0, 33.0, 0.01, 0.01),
+    ) as dataset:
+        dataset.write(np.array([[1.0]], dtype=np.float32), 1)
 
     mock_gateway = mock_eodag.return_value
     mock_gateway.search_all.return_value = [FakeItem()]
