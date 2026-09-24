@@ -6,6 +6,7 @@ import rasterio
 import xarray as xr
 from pathlib import Path
 from unittest.mock import patch
+from rasterio.transform import from_origin
 
 from fetcheo.downloaders.sen3_eodag import Sentinel3SynergyDownloader
 
@@ -30,8 +31,8 @@ TEST_POLYGON = {
 
 
 @patch("fetcheo.downloaders.sen3_eodag.EODataAccessGateway")
-def test_sen3_eodag_fetch_skips_duplicate_output_for_same_acquisition(mock_eodag, tmp_path, monkeypatch):
-    """`fetch` should emit one raster per same-time swath using the source product id."""
+def test_sen3_eodag_fetch_emits_distinct_outputs_for_same_acquisition(mock_eodag, tmp_path, monkeypatch):
+    """`fetch` should keep same-time swaths separate by including the source product id."""
     monkeypatch.setenv("CDSE_USERNAME", "dummy_user")
     monkeypatch.setenv("CDSE_PASSWORD", "dummy_pass")
 
@@ -108,6 +109,60 @@ def test_sen3_eodag_fetch_skips_duplicate_output_for_same_acquisition(mock_eodag
         assert dataset.width == 2
         assert dataset.height == 2
         assert 2.0 in data
+
+
+@patch("fetcheo.downloaders.sen3_eodag.EODataAccessGateway")
+def test_sen3_eodag_fetch_skips_existing_output_without_downloading(mock_eodag, tmp_path, monkeypatch):
+    """`fetch` should reuse an existing GeoTIFF and skip the EODAG download call."""
+    monkeypatch.setenv("CDSE_USERNAME", "dummy_user")
+    monkeypatch.setenv("CDSE_PASSWORD", "dummy_pass")
+
+    acquisition_time = "2021-01-01T00:00:00Z"
+
+    class FakeItem:
+        properties = {
+            "datetime": acquisition_time,
+            "id": "tile-a",
+        }
+
+    existing_output = tmp_path / "S3_20210101_000000_tile-a_Oa01_reflectance.tif"
+    with rasterio.open(
+        existing_output,
+        "w",
+        driver="GTiff",
+        width=1,
+        height=1,
+        count=1,
+        dtype="float32",
+        crs="EPSG:4326",
+        transform=from_origin(-124.0, 33.0, 0.01, 0.01),
+    ) as dataset:
+        dataset.write(np.array([[1.0]], dtype=np.float32), 1)
+
+    mock_gateway = mock_eodag.return_value
+    mock_gateway.search_all.return_value = [FakeItem()]
+
+    downloader = Sentinel3SynergyDownloader(
+        variables_to_files_map={"Oa01_reflectance": "Oa01_reflectance"}
+    )
+
+    reports = downloader.fetch(
+        polygon=TEST_POLYGON,
+        time_frame=(TEST_START_DATE, TEST_END_DATE),
+        output_dir=tmp_path,
+        cache_dir=tmp_path,
+        show_progress=False,
+    )
+
+    assert len(reports) == 1
+    assert mock_gateway.download.call_count == 0
+
+    report = reports[0]
+    assert report.download_successful is True
+    assert report.variable_name == "Oa01_reflectance"
+    assert report.path == existing_output
+    assert report.metadata == {"note": "Already exists (Skipped Download)"}
+    assert report.acquisition_time == datetime.datetime(2021, 1, 1, 0, 0, tzinfo=datetime.timezone.utc)
 
 
 def test_sen3_eodag_integration(tmp_path):
