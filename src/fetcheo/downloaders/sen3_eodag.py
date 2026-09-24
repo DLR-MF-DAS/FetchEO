@@ -104,7 +104,7 @@ class Sentinel3SynergyDownloader(BaseDownloader):
                 final_basename = f"S3_{exact_time_str}_{product_id}_{var_name}"
                 final_tif_path = output_dir / f"{final_basename}.tif"
                 
-                if final_tif_path.exists():
+                if final_tif_path.exists() and self._validate_geotiff(output_dir, final_basename).get(final_tif_path, False):
                     # Add to DB report immediately without downloading
                     reports.append(self._create_success_report(
                         var_name, acq_time, polygon, bbox, final_tif_path, "Already exists (Skipped Download)"
