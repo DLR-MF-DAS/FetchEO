@@ -36,6 +36,7 @@ dependencies = [
     "satpy",
     "openeo",
     "eodag",
+    "copernicusmarine",
 ]
 
 [project.urls]
