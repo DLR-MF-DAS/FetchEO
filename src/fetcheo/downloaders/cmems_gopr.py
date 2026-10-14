@@ -37,7 +37,7 @@ class CMEMSGlobalOceanPhysicsReanalysisDownloader(BaseDownloader):
         variables: Optional[list[str]] = None,
         frequency: str = "daily",
         min_depth: float = 0.0,
-        max_depth: Optional[float] = 10.0,
+        max_depth: Optional[float] = 16.0,
         username: Optional[str] = None,
         password: Optional[str] = None,
     ) -> None:
