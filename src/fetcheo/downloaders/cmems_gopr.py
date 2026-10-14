@@ -358,14 +358,22 @@ class CMEMSGlobalOceanPhysicsReanalysisDownloader(BaseDownloader):
         error: Optional[str],
         metadata: Optional[dict] = None,
     ) -> ItemDownloadReport:
+        # Prepare metadata for the report, ensuring depth and variable information is included
         report_metadata = dict(metadata or {})
+        report_metadata.setdefault("depth_m", self.min_depth)
+        report_metadata["cmems_variable"] = variable
+        
+        # Add standard_name if available for the variable
         standard_name = self.GLORYS_VARIABLES.get(variable)
         if standard_name is not None:
             report_metadata["standard_name"] = standard_name
 
+		# Generate a variable name that includes the depth for catalog persistence
+        depth_m = float(report_metadata["depth_m"])
+        depth_variable_name = f"{variable}_depth_{depth_m:g}m"
         return ItemDownloadReport(
             data_source="CMEMS",
-            variable_name=variable,
+            variable_name=depth_variable_name,
             acquisition_time=acquisition_time,
             polygon=polygon,
             bbox=bbox,
