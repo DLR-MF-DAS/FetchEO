@@ -20,7 +20,7 @@ TEST_POLYGON = {
 def _write_subset(path):
     dataset = xr.Dataset(
         {
-            "water_temp": (
+            "thetao": (
                 ("time", "depth", "latitude", "longitude"),
                 np.arange(36, dtype=np.float32).reshape(2, 2, 3, 3),
             )
@@ -47,7 +47,7 @@ def test_cmems_fetch_subsets_clips_and_reports_each_timestamp(tmp_path, monkeypa
     monkeypatch.setattr(cmems_gopr.copernicusmarine, "subset", fake_subset)
     downloader = CMEMSGlobalOceanPhysicsReanalysisDownloader(
         dataset_id="example-dataset",
-        variables=["water_temp"],
+        variables=["thetao"],
         min_depth=0.0,
         max_depth=5.0,
         username="user",
@@ -70,10 +70,14 @@ def test_cmems_fetch_subsets_clips_and_reports_each_timestamp(tmp_path, monkeypa
         datetime.datetime(2021, 1, 2),
     ]
     assert [report.metadata["depth_m"] for report in reports] == [0.0, 0.0, 5.0, 5.0]
+    assert all(
+        report.metadata["standard_name"] == "sea_water_potential_temperature"
+        for report in reports
+    )
     assert all(report.path.is_file() for report in reports)
     assert all(report.data_source == "CMEMS" for report in reports)
     assert calls[0]["dataset_id"] == "example-dataset"
-    assert calls[0]["variables"] == ["water_temp"]
+    assert calls[0]["variables"] == ["thetao"]
     assert calls[0]["minimum_longitude"] == -1.0
     assert calls[0]["maximum_latitude"] == 51.0
     assert calls[0]["username"] == "user"
@@ -120,6 +124,7 @@ def test_cmems_defaults_to_all_glorys_variables():
     downloader = CMEMSGlobalOceanPhysicsReanalysisDownloader()
     assert downloader.variables == list(downloader.GLORYS_VARIABLES)
     assert len(downloader.variables) == 11
+    assert downloader.GLORYS_VARIABLES["thetao"] == "sea_water_potential_temperature"
 
 
 def test_cmems_integration_downloads_valid_geotiffs(tmp_path):
