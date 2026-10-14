@@ -116,6 +116,12 @@ def test_cmems_requires_dataset_and_variables():
         CMEMSGlobalOceanPhysicsReanalysisDownloader(dataset_id="example-dataset", variables=[])
 
 
+def test_cmems_defaults_to_all_glorys_variables():
+    downloader = CMEMSGlobalOceanPhysicsReanalysisDownloader()
+    assert downloader.variables == list(downloader.GLORYS_VARIABLES)
+    assert len(downloader.variables) == 11
+
+
 def test_cmems_integration_downloads_valid_geotiffs(tmp_path):
     """Live download check; requires network access and Copernicus Marine credentials."""
     if os.environ.get("RUN_INTEGRATION") != "1":
@@ -123,7 +129,7 @@ def test_cmems_integration_downloads_valid_geotiffs(tmp_path):
 
     polygon = {
         "type": "Polygon",
-        "coordinates": [[[5, 65], [10, 65], [10, 75], [5, 75], [5, 65]]],
+        "coordinates": [[[5, 65], [25, 65], [25, 75], [5, 75], [5, 65]]],
     }
     time_frame = (datetime.datetime(2023, 6, 1), datetime.datetime(2023, 6, 3))
     output_dir = Path(tmp_path) / "cmems_output"
@@ -143,6 +149,17 @@ def test_cmems_integration_downloads_valid_geotiffs(tmp_path):
 
     assert reports, "CMEMS returned no download reports"
     assert {report.variable_name for report in reports} == {"thetao", "zos"}
+    expected_dates = {
+        datetime.datetime(2023, 6, day).date()
+        for day in range(time_frame[0].day, time_frame[1].day + 1)
+    }
+    for variable in ("thetao", "zos"):
+        actual_dates = {
+            report.acquisition_time.date()
+            for report in reports
+            if report.variable_name == variable and report.download_successful
+        }
+        assert actual_dates == expected_dates, f"Unexpected dates for {variable}: {actual_dates}"
     for report in reports:
         assert report.download_successful, (
             f"{report.variable_name} | {report.acquisition_time.date()} | {report.error}"
