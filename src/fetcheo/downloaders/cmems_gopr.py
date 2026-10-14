@@ -225,7 +225,22 @@ class CMEMSGlobalOceanPhysicsReanalysisDownloader(BaseDownloader):
                         da = da.sel({depth_name: slice(self.min_depth, None)})
                     
                     if da.sizes[depth_name] == 0:
-                        logger.warning("No depth levels found in range [%s, %s] for variable %s", self.min_depth, self.max_depth, variable)
+                        error = (
+                            f"No depth levels found in range [{self.min_depth}, {self.max_depth}] "
+                            f"for variable '{variable}'."
+                        )
+                        logger.warning(error)
+                        reports.append(
+                            self._report(
+                                variable,
+                                time_frame[0],
+                                polygon,
+                                bbox,
+                                output_dir / f"{self._file_stem(variable, time_frame[0], depth=self.min_depth)}.tif",
+                                False,
+                                error,
+                            )
+                        )
                         continue
                     depth_values = [float(d) for d in da[depth_name].values]
                 else:
