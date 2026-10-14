@@ -30,6 +30,19 @@ class CMEMSGlobalOceanPhysicsReanalysisDownloader(BaseDownloader):
         "daily": "cmems_mod_glo_phy_my_0.083deg_P1D-m",
         "monthly": "cmems_mod_glo_phy_my_0.083deg_P1M-m",
     }
+    GLORYS_VARIABLES = (
+        "bottomT",
+        "mlotst",
+        "siconc",
+        "sithick",
+        "so",
+        "thetao",
+        "uo",
+        "usi",
+        "vo",
+        "vsi",
+        "zos",
+    )
 
     def __init__(
         self,
@@ -55,6 +68,8 @@ class CMEMSGlobalOceanPhysicsReanalysisDownloader(BaseDownloader):
 
         if not dataset_id.strip():
             raise ValueError("dataset_id must not be empty")
+        if variables is None:
+            variables = list(self.GLORYS_VARIABLES)
         if not variables or any(not variable.strip() for variable in variables):
             raise ValueError("variables must contain at least one non-empty name")
 
