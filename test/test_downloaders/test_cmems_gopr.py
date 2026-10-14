@@ -70,6 +70,19 @@ def test_cmems_fetch_subsets_clips_and_reports_each_timestamp(tmp_path, monkeypa
         datetime.datetime(2021, 1, 2),
     ]
     assert [report.metadata["depth_m"] for report in reports] == [0.0, 0.0, 5.0, 5.0]
+    assert [report.variable_name for report in reports] == [
+        "thetao_depth_0m",
+        "thetao_depth_0m",
+        "thetao_depth_5m",
+        "thetao_depth_5m",
+    ]
+    assert all(report.metadata["cmems_variable"] == "thetao" for report in reports)
+    assert [report.path.name for report in reports] == [
+        "example-dataset_thetao_depth_0000.0m_20210101T000000.tif",
+        "example-dataset_thetao_depth_0000.0m_20210102T000000.tif",
+        "example-dataset_thetao_depth_0005.0m_20210101T000000.tif",
+        "example-dataset_thetao_depth_0005.0m_20210102T000000.tif",
+    ]
     assert all(
         report.metadata["standard_name"] == "sea_water_potential_temperature"
         for report in reports
@@ -153,7 +166,7 @@ def test_cmems_integration_downloads_valid_geotiffs(tmp_path):
     )
 
     assert reports, "CMEMS returned no download reports"
-    assert {report.variable_name for report in reports} == {"thetao", "zos"}
+    assert {report.metadata["cmems_variable"] for report in reports} == {"thetao", "zos"}
     expected_dates = {
         datetime.datetime(2023, 6, day).date()
         for day in range(time_frame[0].day, time_frame[1].day + 1)
@@ -162,12 +175,12 @@ def test_cmems_integration_downloads_valid_geotiffs(tmp_path):
         actual_dates = {
             report.acquisition_time.date()
             for report in reports
-            if report.variable_name == variable and report.download_successful
+            if report.metadata["cmems_variable"] == variable and report.download_successful
         }
         assert actual_dates == expected_dates, f"Unexpected dates for {variable}: {actual_dates}"
     for report in reports:
         assert report.download_successful, (
-            f"{report.variable_name} | {report.acquisition_time.date()} | {report.error}"
+            f"{report.metadata['cmems_variable']} | {report.acquisition_time.date()} | {report.error}"
         )
         assert report.path.is_file(), f"GeoTIFF does not exist: {report.path}"
         with rasterio.open(report.path) as raster:
