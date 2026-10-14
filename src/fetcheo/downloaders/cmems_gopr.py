@@ -30,19 +30,19 @@ class CMEMSGlobalOceanPhysicsReanalysisDownloader(BaseDownloader):
         "daily": "cmems_mod_glo_phy_my_0.083deg_P1D-m",
         "monthly": "cmems_mod_glo_phy_my_0.083deg_P1M-m",
     }
-    GLORYS_VARIABLES = (
-        "bottomT",
-        "mlotst",
-        "siconc",
-        "sithick",
-        "so",
-        "thetao",
-        "uo",
-        "usi",
-        "vo",
-        "vsi",
-        "zos",
-    )
+    GLORYS_VARIABLES = {
+        "bottomT": "sea_water_potential_temperature_at_sea_floor",
+        "mlotst": "ocean_mixed_layer_thickness_defined_by_sigma_theta",
+        "siconc": "sea_ice_area_fraction",
+        "sithick": "sea_ice_thickness",
+        "so": "sea_water_salinity",
+        "thetao": "sea_water_potential_temperature",
+        "uo": "eastward_sea_water_velocity",
+        "usi": "eastward_sea_ice_velocity",
+        "vo": "northward_sea_water_velocity",
+        "vsi": "northward_sea_ice_velocity",
+        "zos": "sea_surface_height_above_geoid",
+    }
 
     def __init__(
         self,
@@ -358,6 +358,11 @@ class CMEMSGlobalOceanPhysicsReanalysisDownloader(BaseDownloader):
         error: Optional[str],
         metadata: Optional[dict] = None,
     ) -> ItemDownloadReport:
+        report_metadata = dict(metadata or {})
+        standard_name = self.GLORYS_VARIABLES.get(variable)
+        if standard_name is not None:
+            report_metadata["standard_name"] = standard_name
+
         return ItemDownloadReport(
             data_source="CMEMS",
             variable_name=variable,
@@ -367,5 +372,5 @@ class CMEMSGlobalOceanPhysicsReanalysisDownloader(BaseDownloader):
             path=path,
             download_successful=successful,
             error=error,
-            metadata=metadata,
+            metadata=report_metadata or None,
         )
