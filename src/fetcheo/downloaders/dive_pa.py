@@ -125,7 +125,10 @@ class DIVEPlanktonAbundanceDownloader(BaseDownloader):
 
         with session.get(download_url, headers=headers, stream=True, timeout=60) as response:
             if response.status_code == 416:
-                pass
+                expected_range = f"bytes */{resume_byte_pos}"
+                if not resume_byte_pos or response.headers.get("Content-Range") != expected_range:
+                    temp_path.unlink(missing_ok=True)
+                    response.raise_for_status()
             else:
                 response.raise_for_status()
                 if response.status_code == 206:
