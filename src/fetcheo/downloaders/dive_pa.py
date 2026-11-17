@@ -32,6 +32,10 @@ class DIVEPlanktonAbundanceDownloader(BaseDownloader):
     """
 
     SOURCE_DOI = "10.5281/zenodo.22899602"
+    ZENODO_RECORD_FILES = {
+        "22899602": "cprdata_dive_v4_20w29e_65n79n_0083deg.nc",
+        "23416271": "dive_inputdata_svar_spartcctp_20w29e_65n79n_0083deg.nc",
+    }
 
     def __init__(
         self,
@@ -106,6 +110,11 @@ class DIVEPlanktonAbundanceDownloader(BaseDownloader):
         expected_md5 = None
         if zenodo_match and "/files/" not in self.source_url_or_path:
             record_id = zenodo_match.group(1)
+            cached_filename = self.ZENODO_RECORD_FILES.get(record_id)
+            if cached_filename:
+                cached_path = cache_dir / cached_filename
+                if cached_path.exists():
+                    return cached_path
             download_url, filename, expected_md5 = self._resolve_zenodo_record(record_id)
         else:
             download_url = self.source_url_or_path

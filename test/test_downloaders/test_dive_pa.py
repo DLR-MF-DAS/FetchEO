@@ -276,6 +276,32 @@ def test_resolve_zenodo_record_raises_without_netcdf(monkeypatch):
         DIVEPlanktonAbundanceDownloader()._resolve_zenodo_record("1234")
 
 
+@pytest.mark.parametrize(
+    ("record_id", "filename"),
+    [
+        ("22899602", "cprdata_dive_v4_20w29e_65n79n_0083deg.nc"),
+        ("23416271", "dive_inputdata_svar_spartcctp_20w29e_65n79n_0083deg.nc"),
+    ],
+)
+def test_ensure_local_netcdf_uses_cached_default_record_without_api(
+    tmp_path, monkeypatch, record_id, filename
+):
+    cache_dir = tmp_path / "cache"
+    cache_dir.mkdir()
+    cached_path = cache_dir / filename
+    cached_path.touch()
+    downloader = DIVEPlanktonAbundanceDownloader(
+        source_url_or_path=f"https://zenodo.org/records/{record_id}"
+    )
+
+    def fail_to_resolve(*args, **kwargs):
+        pytest.fail("Zenodo metadata should not be requested for an existing cached default file")
+
+    monkeypatch.setattr(downloader, "_resolve_zenodo_record", fail_to_resolve)
+
+    assert downloader._ensure_local_netcdf(cache_dir) == cached_path
+
+
 def test_ensure_local_netcdf_downloads_direct_url(tmp_path, monkeypatch):
     class FakeResponse:
         status_code = 200
