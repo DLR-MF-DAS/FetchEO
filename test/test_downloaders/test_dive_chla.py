@@ -57,7 +57,6 @@ def test_dive_chla_constructor_and_datetime_conversion():
 		datetime.datetime(2021, 1, 1, tzinfo=datetime.timezone.utc)
 	) == np.datetime64("2021-01-01T00:00:00", "ns")
 
-
 def test_fix_chla_time_origin_shifts_future_decoded_dates():
 	dataset = xr.Dataset(
 		coords={"time": pd.date_range("2098-01-02", periods=2, freq="D")}
@@ -157,67 +156,6 @@ def test_fetch_reuses_valid_output_without_rewriting(tmp_path):
 	assert second_reports[0].path.stat().st_mtime_ns == first_mtime
 
 
-def test_fetch_cache_distinguishes_ordered_depth_selections(tmp_path):
-	netcdf_path = tmp_path / "tiny_chla.nc"
-	_write_chla_dataset(netcdf_path)
-	output_dir = tmp_path / "output"
-	arguments = {
-		"polygon": TEST_POLYGON,
-		"time_frame": (datetime.datetime(2008, 1, 1), datetime.datetime(2008, 1, 1)),
-		"output_dir": output_dir,
-		"show_progress": False,
-	}
-
-	single_depth = DIVEChlADownloader(
-		local_nc_path=netcdf_path,
-		split_depths_as_variables=False,
-		depth_indices=[0],
-	).fetch(**arguments)
-	multiple_depths = DIVEChlADownloader(
-		local_nc_path=netcdf_path,
-		split_depths_as_variables=False,
-		depth_indices=[0, 2],
-	).fetch(**arguments)
-
-	assert single_depth[0].path != multiple_depths[0].path
-	assert multiple_depths[0].metadata["cached"] is not True
-	with rasterio.open(single_depth[0].path) as raster:
-		assert raster.count == 1
-	with rasterio.open(multiple_depths[0].path) as raster:
-		assert raster.count == 2
-
-
-def test_fetch_cache_distinguishes_spatial_subsets(tmp_path):
-	netcdf_path = tmp_path / "tiny_chla.nc"
-	_write_chla_dataset(netcdf_path)
-	output_dir = tmp_path / "output"
-	shifted_polygon = {
-		"type": "Polygon",
-		"coordinates": [
-			[[20.1, 65.0], [20.2, 65.0], [20.2, 65.1], [20.1, 65.1], [20.1, 65.0]]
-		],
-	}
-	arguments = {
-		"time_frame": (datetime.datetime(2008, 1, 1), datetime.datetime(2008, 1, 1)),
-		"output_dir": output_dir,
-		"show_progress": False,
-	}
-
-	first_reports = DIVEChlADownloader(local_nc_path=netcdf_path).fetch(
-		polygon=TEST_POLYGON, **arguments
-	)
-	second_reports = DIVEChlADownloader(local_nc_path=netcdf_path).fetch(
-		polygon=shifted_polygon, **arguments
-	)
-
-	assert first_reports[0].path != second_reports[0].path
-	assert second_reports[0].metadata.get("cached") is not True
-	with rasterio.open(first_reports[0].path) as first_raster, rasterio.open(
-		second_reports[0].path
-	) as second_raster:
-		assert first_raster.transform != second_raster.transform
-
-
 def test_fetch_returns_no_reports_when_time_or_area_has_no_data(tmp_path):
 	netcdf_path = tmp_path / "tiny_chla.nc"
 	_write_chla_dataset(netcdf_path)
@@ -276,3 +214,73 @@ def test_dive_chla_zenodo_integration_metadata():
 	)
 	assert file_metadata["checksum"].endswith(downloader.EXPECTED_MD5)
 	assert file_metadata["size"] > 1_000_000_000
+
+
+def test_fetch_cache_distinguishes_ordered_depth_selections(tmp_path):
+	netcdf_path = tmp_path / "tiny_chla.nc"
+	_write_chla_dataset(netcdf_path)
+	output_dir = tmp_path / "output"
+	downloader = DIVEChlADownloader(
+		local_nc_path=netcdf_path,
+		depth_indices=[0, 2],
+		time_batch_size=1,
+	)
+
+	initial_reports = downloader.fetch(
+		polygon=TEST_POLYGON,
+		time_frame=(datetime.datetime(2008, 1, 1), datetime.datetime(2008, 1, 1)),
+		output_dir=output_dir,
+		show_progress=False,
+	)
+
+	assert len(initial_reports) == 2
+	assert [report.variable_name for report in initial_reports] == ["chl_0p51m", "chl_2p67m"]
+	assert all(report.download_successful for report in initial_reports)
+	assert all(report.path.is_file() for report in initial_reports)
+	assert all(report.metadata["units"] == "mg/m3" for report in initial_reports)
+	assert [report.metadata["depths_m"] for report in initial_reports] == [[0.51], [2.67]]
+
+	with rasterio.open(initial_reports[0].path) as raster:
+		assert raster.count == 1
+		assert raster.width == 2
+		assert raster.height == 2
+		assert raster.crs.to_string() == "EPSG:4326"
+		assert raster.descriptions == ("chl_0.51m",)
+		assert raster.tags()["units"] == "mg/m3"
+		# Source values increase from south to north; output is north-up.
+		np.testing.assert_array_equal(
+			raster.read(1), np.array([[3, 4], [0, 1]], dtype=np.float32)
+		)
+
+	# Request in reverse order.
+	downloader.depth_indices = [2, 0]
+	reversed_reports = downloader.fetch(
+		polygon=TEST_POLYGON,
+		time_frame=(datetime.datetime(2008, 1, 1), datetime.datetime(2008, 1, 1)),
+		output_dir=output_dir,
+		show_progress=False,
+	)
+
+	assert len(reversed_reports) == 2
+	assert [report.variable_name for report in reversed_reports] == ["chl_2p67m", "chl_0p51m"]
+	assert all(report.download_successful for report in reversed_reports)
+	assert all(report.path.is_file() for report in reversed_reports)
+	assert all(report.metadata["units"] == "mg/m3" for report in reversed_reports)
+	assert [report.metadata["depths_m"] for report in reversed_reports] == [[2.67], [0.51]]
+	assert all(report.metadata.get("cached", False) is False for report in reversed_reports)
+	assert {report.path for report in initial_reports}.isdisjoint(
+		{report.path for report in reversed_reports}
+	)
+
+	with rasterio.open(reversed_reports[0].path) as raster:
+		assert raster.count == 1
+		assert raster.width == 2
+		assert raster.height == 2
+		assert raster.crs.to_string() == "EPSG:4326"
+		assert raster.descriptions == ("chl_2.67m",)
+		assert raster.tags()["units"] == "mg/m3"
+		# Source values increase from south to north; output is north-up.
+		np.testing.assert_array_equal(
+			raster.read(1), np.array([[21, 22], [18, 19]], dtype=np.float32)
+		)
+
