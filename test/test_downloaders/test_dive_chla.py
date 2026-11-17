@@ -157,6 +157,67 @@ def test_fetch_reuses_valid_output_without_rewriting(tmp_path):
 	assert second_reports[0].path.stat().st_mtime_ns == first_mtime
 
 
+def test_fetch_cache_distinguishes_ordered_depth_selections(tmp_path):
+	netcdf_path = tmp_path / "tiny_chla.nc"
+	_write_chla_dataset(netcdf_path)
+	output_dir = tmp_path / "output"
+	arguments = {
+		"polygon": TEST_POLYGON,
+		"time_frame": (datetime.datetime(2008, 1, 1), datetime.datetime(2008, 1, 1)),
+		"output_dir": output_dir,
+		"show_progress": False,
+	}
+
+	single_depth = DIVEChlADownloader(
+		local_nc_path=netcdf_path,
+		split_depths_as_variables=False,
+		depth_indices=[0],
+	).fetch(**arguments)
+	multiple_depths = DIVEChlADownloader(
+		local_nc_path=netcdf_path,
+		split_depths_as_variables=False,
+		depth_indices=[0, 2],
+	).fetch(**arguments)
+
+	assert single_depth[0].path != multiple_depths[0].path
+	assert multiple_depths[0].metadata["cached"] is not True
+	with rasterio.open(single_depth[0].path) as raster:
+		assert raster.count == 1
+	with rasterio.open(multiple_depths[0].path) as raster:
+		assert raster.count == 2
+
+
+def test_fetch_cache_distinguishes_spatial_subsets(tmp_path):
+	netcdf_path = tmp_path / "tiny_chla.nc"
+	_write_chla_dataset(netcdf_path)
+	output_dir = tmp_path / "output"
+	shifted_polygon = {
+		"type": "Polygon",
+		"coordinates": [
+			[[20.1, 65.0], [20.2, 65.0], [20.2, 65.1], [20.1, 65.1], [20.1, 65.0]]
+		],
+	}
+	arguments = {
+		"time_frame": (datetime.datetime(2008, 1, 1), datetime.datetime(2008, 1, 1)),
+		"output_dir": output_dir,
+		"show_progress": False,
+	}
+
+	first_reports = DIVEChlADownloader(local_nc_path=netcdf_path).fetch(
+		polygon=TEST_POLYGON, **arguments
+	)
+	second_reports = DIVEChlADownloader(local_nc_path=netcdf_path).fetch(
+		polygon=shifted_polygon, **arguments
+	)
+
+	assert first_reports[0].path != second_reports[0].path
+	assert second_reports[0].metadata.get("cached") is not True
+	with rasterio.open(first_reports[0].path) as first_raster, rasterio.open(
+		second_reports[0].path
+	) as second_raster:
+		assert first_raster.transform != second_raster.transform
+
+
 def test_fetch_returns_no_reports_when_time_or_area_has_no_data(tmp_path):
 	netcdf_path = tmp_path / "tiny_chla.nc"
 	_write_chla_dataset(netcdf_path)

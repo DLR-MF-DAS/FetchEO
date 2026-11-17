@@ -239,6 +239,13 @@ class DIVEChlADownloader(BaseDownloader):
             width = len(lons)
             height = len(lats)
             transform = from_bounds(west, south, east, north, width, height)
+            cache_identity = hashlib.sha256()
+            for name, values in (("lons", lons), ("lats", lats), ("depths", depths)):
+                values_array = np.asarray(values, dtype="<f8")
+                cache_identity.update(name.encode())
+                cache_identity.update(len(values_array).to_bytes(8, "little"))
+                cache_identity.update(values_array.tobytes())
+            cache_key = cache_identity.hexdigest()[:16]
 
             da_chl = ds_sub["chl"]
             units = str(da_chl.attrs.get("units", "mg/m3"))
@@ -283,7 +290,9 @@ class DIVEChlADownloader(BaseDownloader):
                 for ts in batch_ts:
                     date_str = pd.to_datetime(ts).strftime("%Y%m%d")
                     for cfg in var_configs:
-                        basename = f"{self.DATA_SOURCE_NAME}_{cfg['report_var_name']}_{date_str}"
+                        basename = (
+                            f"{self.DATA_SOURCE_NAME}_{cfg['report_var_name']}_{date_str}_{cache_key}"
+                        )
                         tif_path = self._get_filepaths(output_dir, basename)[0]
                         if not self._validate_geotiff(output_dir, basename).get(tif_path, False):
                             need_io = True
@@ -306,7 +315,9 @@ class DIVEChlADownloader(BaseDownloader):
 
                     for cfg in var_configs:
                         report_var = cfg["report_var_name"]
-                        basename = f"{self.DATA_SOURCE_NAME}_{report_var}_{date_str}"
+                        basename = (
+                            f"{self.DATA_SOURCE_NAME}_{report_var}_{date_str}_{cache_key}"
+                        )
                         tif_path = self._get_filepaths(output_dir, basename)[0]
 
                         if self._validate_geotiff(output_dir, basename).get(tif_path, False):
