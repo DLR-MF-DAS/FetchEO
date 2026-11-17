@@ -178,6 +178,42 @@ def test_fetch_reuses_valid_outputs_without_rewriting(tmp_path):
     assert all(report.path.stat().st_mtime_ns == first_mtimes[report.path] for report in second_reports)
 
 
+def test_fetch_cache_distinguishes_spatial_subsets(tmp_path):
+    netcdf_path = _write_dataset(tmp_path / "dive.nc")
+    output_dir = tmp_path / "output"
+    downloader = DIVEPlanktonAbundanceDownloader(
+        source_url_or_path=str(netcdf_path), variables=["abundance"]
+    )
+    time_frame = (TEST_FRAME[0], TEST_FRAME[0])
+    first_reports = downloader.fetch(
+        TEST_POLYGON, time_frame, output_dir, show_progress=False
+    )
+    second_polygon = {
+        "type": "Polygon",
+        "coordinates": [
+            [
+                [20.0833333, 65.0],
+                [20.1666667, 65.0],
+                [20.1666667, 65.0833333],
+                [20.0833333, 65.0833333],
+                [20.0833333, 65.0],
+            ]
+        ],
+    }
+
+    second_reports = downloader.fetch(
+        second_polygon, time_frame, output_dir, show_progress=False
+    )
+
+    assert len(first_reports) == len(second_reports) == 3
+    assert all(report.download_successful for report in second_reports)
+    assert all(report.metadata.get("cached") is not True for report in second_reports)
+    assert {report.path for report in first_reports}.isdisjoint(
+        report.path for report in second_reports
+    )
+    assert first_reports[0].bbox != second_reports[0].bbox
+
+
 def test_fetch_returns_empty_for_time_or_area_without_data(tmp_path):
     netcdf_path = _write_dataset(tmp_path / "dive.nc")
     downloader = DIVEPlanktonAbundanceDownloader(source_url_or_path=str(netcdf_path))
