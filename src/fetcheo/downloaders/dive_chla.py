@@ -122,12 +122,7 @@ class DIVEChlADownloader(BaseDownloader):
         session = self._build_retry_session()
 
         with session.get(self.DOWNLOAD_URL, headers=headers, stream=True, timeout=60) as response:
-            if response.status_code == 416:
-                expected_range = f"bytes */{resume_byte_pos}"
-                if not resume_byte_pos or response.headers.get("Content-Range") != expected_range:
-                    temp_path.unlink(missing_ok=True)
-                    response.raise_for_status()
-            else:
+            if response.status_code != 416:
                 response.raise_for_status()
                 if response.status_code == 206:
                     mode = "ab"
@@ -392,6 +387,7 @@ class DIVEChlADownloader(BaseDownloader):
                                     if is_valid
                                     else "GeoTIFF validation failed after write.",
                                     metadata={
+                                        "cached": False,
                                         "units": units,
                                         "bands": arr.shape[0],
                                         "depths_m": cfg["depths_m"],
