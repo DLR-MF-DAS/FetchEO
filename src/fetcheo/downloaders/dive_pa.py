@@ -31,6 +31,8 @@ class DIVEPlanktonAbundanceDownloader(BaseDownloader):
       - Custom attributes such as `unique_vals` and `fillval: "numpy.ndarray.nan"`
     """
 
+    SOURCE_DOI = "10.5281/zenodo.22899602"
+
     def __init__(
         self,
         source_url_or_path: str = "https://zenodo.org/records/22899602",
@@ -396,7 +398,7 @@ class DIVEPlanktonAbundanceDownloader(BaseDownloader):
                                         long_name=long_name,
                                         units=units,
                                         acquisition_time=acq_time.isoformat(),
-                                        source_doi="10.5281/zenodo.22899602",
+                                        source_doi=self.SOURCE_DOI,
                                     )
 
                                 tmp_tif_path.replace(tif_path)
