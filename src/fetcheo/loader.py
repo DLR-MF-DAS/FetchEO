@@ -91,6 +91,17 @@ class FetchEOLoader:
                 )
                 all_reports.extend(reports)
 
+                for report in reports:
+                    if not getattr(report, 'download_successful', False):
+                        logger.error(
+                            "Downloader %s failed for %s at %s (%s): %s",
+                            name,
+                            getattr(report, 'variable_name', 'unknown variable'),
+                            getattr(report, 'acquisition_time', 'unknown time'),
+                            getattr(report, 'path', 'unknown path'),
+                            getattr(report, 'error', None) or 'No error details provided',
+                        )
+
                 # Add each report to DB after each downloader
                 for r in reports:
                     acq_time = getattr(r, 'acquisition_time', None)
