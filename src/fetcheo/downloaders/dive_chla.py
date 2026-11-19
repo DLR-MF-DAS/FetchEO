@@ -153,6 +153,8 @@ class DIVEChlADownloader(BaseDownloader):
         expected_md5: Optional[str] = None
         if self.verify_md5:
             download_url, expected_md5 = self._resolve_zenodo_file(session)
+            if not expected_md5:
+                raise ValueError(f"No MD5 checksum available for {self.FILENAME}")
         else:
             download_url = self.DOWNLOAD_URL
 
