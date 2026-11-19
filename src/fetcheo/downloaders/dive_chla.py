@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import datetime
 import hashlib
+import logging
 from pathlib import Path
 from typing import Optional, List, Sequence
 
@@ -16,6 +17,8 @@ from tqdm import tqdm
 import xarray as xr
 
 from fetcheo.downloaders._downloader import BaseDownloader, ItemDownloadReport
+
+logger = logging.getLogger(__name__)
 
 
 class DIVEChlADownloader(BaseDownloader):
@@ -33,7 +36,6 @@ class DIVEChlADownloader(BaseDownloader):
     ZENODO_RECORD_ID = "23392001"
     FILENAME = "dive_inputdata_bio_chla_20w29e_65n79n_15z_0083deg.nc"
     DOWNLOAD_URL = f"https://zenodo.org/records/{ZENODO_RECORD_ID}/files/{FILENAME}?download=1"
-    EXPECTED_MD5 = "66bfdde9aea1f8a05e66aeb712539385"
     DATA_SOURCE_NAME = "DIVE_CHLA"
 
     def __init__(
@@ -78,12 +80,18 @@ class DIVEChlADownloader(BaseDownloader):
     @staticmethod
     def _fix_chla_time_origin(ds: xr.Dataset) -> xr.Dataset:
         """
-        Corrects the `timeorigin = 1900.01.01` shift in `dive_inputdata_bio_chla...nc`
-        where timestamps decode as 2098-01-02..2113-01-01 instead of 2008-01-01..2022-12-31.
+        Correct the known `timeorigin = 1900.01.01` inconsistency in the Chl-a source.
+
+        Its time coordinate can decode to 2098-01-02..2113-01-01 instead of the
+        documented 2008-01-01..2022-12-31. Require both the known marker and a
+        future-dated coordinate so unrelated datasets are left unchanged.
         """
+        if "time" not in ds.coords or ds.sizes.get("time", 0) == 0:
+            return ds
+
         time_vals = pd.to_datetime(ds["time"].values)
-        if len(time_vals) > 0 and time_vals[0].year > 2050:
-            # 2098-01-02 minus 32,873 days = 2008-01-01
+        time_origin = ds["time"].attrs.get("timeorigin")
+        if time_vals[0].year > 2050 and time_origin == "1900.01.01":
             shift = time_vals[0] - pd.Timestamp("2008-01-01")
             corrected = (time_vals - shift).values.astype("datetime64[ns]")
             attrs = ds["time"].attrs.copy()
@@ -105,6 +113,28 @@ class DIVEChlADownloader(BaseDownloader):
         session.mount("http://", adapter)
         return session
 
+    def _resolve_zenodo_file(
+        self, session: Optional[requests.Session] = None
+    ) -> tuple[str, Optional[str]]:
+        """Query the Zenodo record API for the current download URL and MD5 checksum."""
+        active_session = session or self._build_retry_session()
+        resp = active_session.get(
+            f"https://zenodo.org/api/records/{self.ZENODO_RECORD_ID}", timeout=30
+        )
+        resp.raise_for_status()
+        data = resp.json()
+
+        for file_info in data.get("files", []):
+            if file_info.get("key") == self.FILENAME:
+                download_url = file_info.get("links", {}).get("self", self.DOWNLOAD_URL)
+                checksum = file_info.get("checksum", "")
+                md5 = checksum.split("md5:")[-1] if checksum.startswith("md5:") else None
+                return download_url, md5
+
+        raise FileNotFoundError(
+            f"{self.FILENAME} not found in Zenodo record {self.ZENODO_RECORD_ID}"
+        )
+
     def _ensure_local_netcdf(self, cache_dir: Path, show_progress: bool = True) -> Path:
         """Streams the 14 GB NetCDF from Zenodo with HTTP Range resume support."""
         if self.local_nc_path and self.local_nc_path.exists():
@@ -120,9 +150,21 @@ class DIVEChlADownloader(BaseDownloader):
 
         headers = {"Range": f"bytes={resume_byte_pos}-"} if resume_byte_pos > 0 else {}
         session = self._build_retry_session()
+        expected_md5: Optional[str] = None
+        if self.verify_md5:
+            download_url, expected_md5 = self._resolve_zenodo_file(session)
+            if not expected_md5:
+                raise ValueError(f"No MD5 checksum available for {self.FILENAME}")
+        else:
+            download_url = self.DOWNLOAD_URL
 
-        with session.get(self.DOWNLOAD_URL, headers=headers, stream=True, timeout=60) as response:
-            if response.status_code != 416:
+        with session.get(download_url, headers=headers, stream=True, timeout=60) as response:
+            if response.status_code == 416:
+                expected_range = f"bytes */{resume_byte_pos}"
+                if not resume_byte_pos or response.headers.get("Content-Range") != expected_range:
+                    temp_path.unlink(missing_ok=True)
+                    response.raise_for_status()
+            else:
                 response.raise_for_status()
                 if response.status_code == 206:
                     mode = "ab"
@@ -148,16 +190,18 @@ class DIVEChlADownloader(BaseDownloader):
                             f.write(chunk)
                             pbar.update(len(chunk))
 
-        if self.verify_md5:
+        if self.verify_md5 and expected_md5:
             hash_md5 = hashlib.md5()
             with open(temp_path, "rb") as f:
                 for chunk in iter(lambda: f.read(16 * 1024 * 1024), b""):
                     hash_md5.update(chunk)
             actual_md5 = hash_md5.hexdigest()
-            if actual_md5 != self.EXPECTED_MD5:
-                temp_path.unlink(missing_ok=True)
+            if actual_md5 != expected_md5:
+                quarantine_path = cache_dir / f"{self.FILENAME}.corrupt.{actual_md5[:8]}"
+                temp_path.replace(quarantine_path)
                 raise ValueError(
-                    f"MD5 mismatch for {self.FILENAME}: expected {self.EXPECTED_MD5}, got {actual_md5}"
+                    f"MD5 mismatch for {self.FILENAME}: expected {expected_md5}, got {actual_md5}. "
+                    f"Downloaded data was quarantined at {quarantine_path}; remove it after inspection if unneeded."
                 )
 
         temp_path.replace(nc_path)
@@ -181,6 +225,7 @@ class DIVEChlADownloader(BaseDownloader):
         try:
             nc_path = self._ensure_local_netcdf(effective_cache_dir, show_progress=show_progress)
         except Exception as exc:
+            logger.exception("Failed to acquire the DIVE Chl-a NetCDF from %s", effective_cache_dir)
             return [
                 ItemDownloadReport(
                     data_source=self.DATA_SOURCE_NAME,
@@ -396,6 +441,11 @@ class DIVEChlADownloader(BaseDownloader):
                             )
                         except Exception as exc:
                             tmp_tif_path.unlink(missing_ok=True)
+                            error = (
+                                f"Failed to write {report_var} for {date_str} "
+                                f"to {tif_path}: {exc}"
+                            )
+                            logger.exception(error)
                             reports.append(
                                 ItemDownloadReport(
                                     data_source=self.DATA_SOURCE_NAME,
@@ -405,7 +455,7 @@ class DIVEChlADownloader(BaseDownloader):
                                     bbox=clipped_bbox,
                                     path=tif_path,
                                     download_successful=False,
-                                    error=str(exc),
+                                    error=error,
                                 )
                             )
                         finally:

@@ -27,7 +27,8 @@ TEST_POLYGON = {
 
 def _write_dataset(path: Path) -> Path:
     """Write a compact fixture with the Zenodo record's coordinate names and variables."""
-    times = np.array(["2008-01-01", "2008-01-02"], dtype="datetime64[ns]")
+    # Mirror the real Zenodo file's decoded timestamps and time-origin metadata.
+    times = np.array(["2097-12-31", "2098-01-01"], dtype="datetime64[ns]")
     latitudes = np.array([65.0, 65.0833333, 65.1666667])
     longitudes = np.array([20.0, 20.0833333, 20.1666667])
     shape = (len(times), len(latitudes), len(longitudes))
@@ -39,6 +40,7 @@ def _write_dataset(path: Path) -> Path:
         },
         coords={"time": times, "latitude": latitudes, "longitude": longitudes},
     )
+    dataset["time"].attrs["timeorigin"] = "1900.01.01"
     dataset.to_netcdf(path)
     return path
 
@@ -68,6 +70,7 @@ def test_fetch_exports_each_surface_field(tmp_path):
     assert {report.variable_name for report in reports} == {"spar", "tcc", "tp"}
     assert len(reports) == 3
     assert all(report.download_successful for report in reports)
+    assert all(report.acquisition_time == datetime.datetime(2008, 1, 1) for report in reports)
     assert all(report.path.is_file() for report in reports)
 
     spar_report = next(report for report in reports if report.variable_name == "spar")

@@ -61,13 +61,26 @@ def test_fix_chla_time_origin_shifts_future_decoded_dates():
 	dataset = xr.Dataset(
 		coords={"time": pd.date_range("2098-01-02", periods=2, freq="D")}
 	)
-	dataset["time"].attrs["units"] = "days since 1900-01-01"
+	dataset["time"].attrs.update(
+		{"units": "days since 1900-01-01", "timeorigin": "1900.01.01"}
+	)
 
 	fixed = DIVEChlADownloader._fix_chla_time_origin(dataset)
 
 	assert fixed.time.values[0] == np.datetime64("2008-01-01T00:00:00", "ns")
 	assert fixed.time.values[1] == np.datetime64("2008-01-02T00:00:00", "ns")
 	assert fixed.time.attrs["units"] == "days since 1900-01-01"
+	assert fixed.time.attrs["timeorigin"] == "1900.01.01"
+
+
+def test_fix_chla_time_origin_leaves_unmarked_future_dates_unchanged():
+	dataset = xr.Dataset(
+		coords={"time": pd.date_range("2098-01-02", periods=2, freq="D")}
+	)
+
+	fixed = DIVEChlADownloader._fix_chla_time_origin(dataset)
+
+	assert fixed.time.values[0] == np.datetime64("2098-01-02T00:00:00", "ns")
 
 
 def test_fetch_exports_selected_depths_to_split_geotiffs(tmp_path):
@@ -194,12 +207,151 @@ def test_fetch_reports_local_netcdf_acquisition_error(tmp_path, monkeypatch):
 	assert reports[0].path == tmp_path / "cache" / downloader.FILENAME
 
 
+def test_checksum_mismatch_quarantines_download_so_retry_starts_fresh(tmp_path, monkeypatch):
+	import hashlib
+
+	downloader = DIVEChlADownloader(verify_md5=True)
+	temp_path = tmp_path / f"{downloader.FILENAME}.part"
+	content = b"fully downloaded but checksum does not match"
+	actual_md5 = hashlib.md5(content).hexdigest()
+	quarantine_path = tmp_path / f"{downloader.FILENAME}.corrupt.{actual_md5[:8]}"
+	temp_path.write_bytes(content)
+
+	class RangeCompleteResponse:
+		status_code = 416
+		headers = {"Content-Range": f"bytes */{len(content)}"}
+		body_reads = 0
+
+		def __enter__(self):
+			return self
+
+		def __exit__(self, *args):
+			return False
+
+		def iter_content(self, chunk_size):
+			self.body_reads += 1
+			yield b""
+
+	class FreshResponse:
+		status_code = 200
+		headers = {"content-length": str(len(content))}
+
+		def __enter__(self):
+			return self
+
+		def __exit__(self, *args):
+			return False
+
+		def raise_for_status(self):
+			pass
+
+		def iter_content(self, chunk_size):
+			yield content
+
+	class FakeSession:
+		def __init__(self):
+			self.responses = [RangeCompleteResponse(), FreshResponse()]
+			self.calls = []
+
+		def get(self, url, **kwargs):
+			self.calls.append(kwargs)
+			return self.responses.pop(0)
+
+	session = FakeSession()
+	monkeypatch.setattr(downloader, "_build_retry_session", lambda: session)
+	expected_md5 = "not-the-file-md5"
+	monkeypatch.setattr(
+		downloader,
+		"_resolve_zenodo_file",
+		lambda *_args, **_kwargs: (downloader.DOWNLOAD_URL, expected_md5),
+	)
+
+	# First run: 416 complete -> MD5 mismatch -> quarantined, .part removed
+	with pytest.raises(ValueError, match="quarantined") as exc_info:
+		downloader._ensure_local_netcdf(tmp_path, show_progress=False)
+	assert str(quarantine_path) in str(exc_info.value)
+	assert quarantine_path.read_bytes() == content
+	assert not temp_path.exists()
+	assert not (tmp_path / downloader.FILENAME).exists()
+
+	# Second run: no .part exists, so it starts a fresh request without Range header
+	expected_md5 = actual_md5
+	result_path = downloader._ensure_local_netcdf(tmp_path, show_progress=False)
+	assert result_path == tmp_path / downloader.FILENAME
+	assert result_path.read_bytes() == content
+	assert session.calls[0]["headers"] == {"Range": f"bytes={len(content)}-"}
+	assert session.calls[1]["headers"] == {}
+
+
+def test_range_416_with_unexpected_content_range_removes_part_and_raises(tmp_path, monkeypatch):
+	downloader = DIVEChlADownloader(verify_md5=True)
+	temp_path = tmp_path / f"{downloader.FILENAME}.part"
+	temp_path.write_bytes(b"oversized-corrupt-partial-file")
+
+	class Bad416Response:
+		status_code = 416
+		headers = {"Content-Range": "bytes */10"}
+
+		def __enter__(self):
+			return self
+
+		def __exit__(self, *args):
+			return False
+
+		def raise_for_status(self):
+			raise requests.HTTPError("416 Range Not Satisfiable")
+
+	class FakeSession:
+		def get(self, url, **kwargs):
+			return Bad416Response()
+
+	monkeypatch.setattr(downloader, "_build_retry_session", lambda: FakeSession())
+	monkeypatch.setattr(
+		downloader,
+		"_resolve_zenodo_file",
+		lambda *_args, **_kwargs: (downloader.DOWNLOAD_URL, "unused-md5"),
+	)
+
+	with pytest.raises(requests.HTTPError, match="416"):
+		downloader._ensure_local_netcdf(tmp_path, show_progress=False)
+
+	assert not temp_path.exists()
+
+
+def test_fetch_reports_and_logs_geotiff_write_failure(tmp_path, monkeypatch, caplog):
+	netcdf_path = tmp_path / "tiny_chla.nc"
+	_write_chla_dataset(netcdf_path)
+	downloader = DIVEChlADownloader(local_nc_path=netcdf_path, depth_indices=[0])
+
+	def fail_to_write(*args, **kwargs):
+		raise OSError("disk is full")
+
+	monkeypatch.setattr("fetcheo.downloaders.dive_chla.rasterio.open", fail_to_write)
+	reports = downloader.fetch(
+		polygon=TEST_POLYGON,
+		time_frame=(datetime.datetime(2008, 1, 1), datetime.datetime(2008, 1, 1)),
+		output_dir=tmp_path / "output",
+		show_progress=False,
+	)
+
+	assert len(reports) == 1
+	assert not reports[0].download_successful
+	assert "disk is full" in reports[0].error
+	assert "20080101" in reports[0].error
+	assert str(reports[0].path) in reports[0].error
+	assert "disk is full" in caplog.text
+
+
 def test_dive_chla_zenodo_integration_metadata():
 	"""Check the live Zenodo record without downloading its large NetCDF file."""
 	if os.environ.get("RUN_INTEGRATION") != "1":
 		pytest.skip("Set RUN_INTEGRATION=1 to check the live Zenodo record.")
 
 	downloader = DIVEChlADownloader()
+	download_url, md5 = downloader._resolve_zenodo_file()
+	assert downloader.FILENAME in download_url
+	assert md5 and len(md5) == 32
+
 	response = requests.get(
 		f"https://zenodo.org/api/records/{downloader.ZENODO_RECORD_ID}",
 		timeout=30,
@@ -212,7 +364,7 @@ def test_dive_chla_zenodo_integration_metadata():
 		for file_info in record["files"]
 		if file_info["key"] == downloader.FILENAME
 	)
-	assert file_metadata["checksum"].endswith(downloader.EXPECTED_MD5)
+	assert file_metadata["checksum"] == f"md5:{md5}"
 	assert file_metadata["size"] > 1_000_000_000
 
 

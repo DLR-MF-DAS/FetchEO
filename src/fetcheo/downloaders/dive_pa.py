@@ -199,6 +199,10 @@ class DIVEPlanktonAbundanceDownloader(BaseDownloader):
 
         return label_map
 
+    def _prepare_dataset(self, ds: xr.Dataset) -> xr.Dataset:
+        """Apply dataset-specific coordinate corrections before selection."""
+        return ds
+
     def fetch(
         self,
         polygon: dict,
@@ -235,6 +239,7 @@ class DIVEPlanktonAbundanceDownloader(BaseDownloader):
 
         # 2. Open NetCDF and slice by polygon bbox & time_frame
         with xr.open_dataset(nc_path) as ds:
+            ds = self._prepare_dataset(ds)
             lat_dim = "lat" if "lat" in ds.dims else "latitude"
             lon_dim = "lon" if "lon" in ds.dims else "longitude"
             time_dim = "time"

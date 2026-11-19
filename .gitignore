@@ -3,7 +3,8 @@ data/
 *cache/
 tmp/
 *.duckdb*
-scratch.py
+scratch*.py
+test_output/
 
 # Byte-compiled / optimized / DLL files
 __pycache__/
