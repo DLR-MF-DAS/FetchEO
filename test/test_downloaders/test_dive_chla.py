@@ -194,6 +194,30 @@ def test_fetch_reports_local_netcdf_acquisition_error(tmp_path, monkeypatch):
 	assert reports[0].path == tmp_path / "cache" / downloader.FILENAME
 
 
+def test_fetch_reports_and_logs_geotiff_write_failure(tmp_path, monkeypatch, caplog):
+	netcdf_path = tmp_path / "tiny_chla.nc"
+	_write_chla_dataset(netcdf_path)
+	downloader = DIVEChlADownloader(local_nc_path=netcdf_path, depth_indices=[0])
+
+	def fail_to_write(*args, **kwargs):
+		raise OSError("disk is full")
+
+	monkeypatch.setattr("fetcheo.downloaders.dive_chla.rasterio.open", fail_to_write)
+	reports = downloader.fetch(
+		polygon=TEST_POLYGON,
+		time_frame=(datetime.datetime(2008, 1, 1), datetime.datetime(2008, 1, 1)),
+		output_dir=tmp_path / "output",
+		show_progress=False,
+	)
+
+	assert len(reports) == 1
+	assert not reports[0].download_successful
+	assert "disk is full" in reports[0].error
+	assert "20080101" in reports[0].error
+	assert str(reports[0].path) in reports[0].error
+	assert "disk is full" in caplog.text
+
+
 def test_dive_chla_zenodo_integration_metadata():
 	"""Check the live Zenodo record without downloading its large NetCDF file."""
 	if os.environ.get("RUN_INTEGRATION") != "1":
