@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import datetime
 import hashlib
+import logging
 from pathlib import Path
 from typing import Optional, List, Sequence
 
@@ -16,6 +17,8 @@ from tqdm import tqdm
 import xarray as xr
 
 from fetcheo.downloaders._downloader import BaseDownloader, ItemDownloadReport
+
+logger = logging.getLogger(__name__)
 
 
 class DIVEChlADownloader(BaseDownloader):
@@ -181,6 +184,7 @@ class DIVEChlADownloader(BaseDownloader):
         try:
             nc_path = self._ensure_local_netcdf(effective_cache_dir, show_progress=show_progress)
         except Exception as exc:
+            logger.exception("Failed to acquire the DIVE Chl-a NetCDF from %s", effective_cache_dir)
             return [
                 ItemDownloadReport(
                     data_source=self.DATA_SOURCE_NAME,
@@ -396,6 +400,11 @@ class DIVEChlADownloader(BaseDownloader):
                             )
                         except Exception as exc:
                             tmp_tif_path.unlink(missing_ok=True)
+                            error = (
+                                f"Failed to write {report_var} for {date_str} "
+                                f"to {tif_path}: {exc}"
+                            )
+                            logger.exception(error)
                             reports.append(
                                 ItemDownloadReport(
                                     data_source=self.DATA_SOURCE_NAME,
@@ -405,7 +414,7 @@ class DIVEChlADownloader(BaseDownloader):
                                     bbox=clipped_bbox,
                                     path=tif_path,
                                     download_successful=False,
-                                    error=str(exc),
+                                    error=error,
                                 )
                             )
                         finally:
