@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import pandas as pd
+import xarray as xr
 from typing import Optional, Sequence
 
 from fetcheo.downloaders.dive_pa import DIVEPlanktonAbundanceDownloader
@@ -16,6 +18,24 @@ class DIVEERA5Downloader(DIVEPlanktonAbundanceDownloader):
     SOURCE_DOI = "10.5281/zenodo.23416271"
     DEFAULT_SOURCE = "https://zenodo.org/records/23416271"
     DEFAULT_VARIABLES = ("spar", "tcc", "tp")
+
+    def _prepare_dataset(self, ds: xr.Dataset) -> xr.Dataset:
+        """Correct the source's 1900-based time origin before date selection.
+
+        Zenodo's ERA5 file decodes to 2097-12-31..2112-12-31 even though its
+        ``timeorigin`` attribute and documented coverage indicate 2008-01-01..
+        2022-12-31. Shift the coordinate only for this known future-dated form.
+        """
+        if "time" not in ds.coords or ds.sizes.get("time", 0) == 0:
+            return ds
+
+        times = pd.to_datetime(ds["time"].values)
+        if times[0].year > 2050 and ds["time"].attrs.get("timeorigin") == "1900.01.01":
+            shift = times[0] - pd.Timestamp("2008-01-01")
+            attrs = ds["time"].attrs.copy()
+            ds = ds.assign_coords(time=(times - shift).values.astype("datetime64[ns]"))
+            ds["time"].attrs = attrs
+        return ds
 
     def __init__(
         self,
